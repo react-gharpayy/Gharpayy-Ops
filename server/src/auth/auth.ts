@@ -99,6 +99,15 @@ export async function ensureDefaultSuperAdmin(): Promise<void> {
     if (existing.status !== "active") patch.status = "active";
     if (!existing.fullName) patch.fullName = fullName;
     if (!existing.tenantId) patch.tenantId = env.DEFAULT_TENANT;
+
+    // Self-heal the password: if the canonical password no longer verifies
+    // against the stored hash (e.g. an older bootstrap created it with a
+    // different secret, or the doc was tampered with), reset it. This makes
+    // every redeploy guarantee the documented credentials work.
+    let passwordOk = false;
+    try { passwordOk = await argon2.verify(existing.passwordHash, password); } catch { passwordOk = false; }
+    if (!passwordOk) patch.passwordHash = await argon2.hash(password);
+
     if (Object.keys(patch).length) {
       patch.updatedAt = now;
       await users.updateOne({ _id: existing._id }, { $set: patch });
