@@ -6,8 +6,6 @@ import { requireAuth, requireScope } from "../../middleware/auth.js";
 import { createManagedUser, type UserDoc } from "../../auth/auth.js";
 import type { TopRole } from "../../../../src/contracts/roles.js";
 
-const ZONES = ["Zone1", "Zone2", "Zone3", "Zone4", "Zone5"] as const;
-
 const CreateBody = z.object({
   fullName: z.string().min(1).max(120),
   email: z.string().email(),
@@ -15,8 +13,6 @@ const CreateBody = z.object({
   password: z.string().min(8).max(72),
   role: z.enum(["manager", "admin", "member"]),
   zones: z.array(z.string()).optional(),
-  managerId: z.string().optional().nullable(),
-  adminId: z.string().optional().nullable(),
 });
 
 const UpdateBody = z.object({
