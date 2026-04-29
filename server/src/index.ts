@@ -14,6 +14,7 @@ import { registerLeadsRoutes } from "./modules/leads/routes.js";
 import { registerTodosRoutes } from "./modules/todos/routes.js";
 import { registerActivitiesRoutes } from "./modules/activities/routes.js";
 import { registerUserRoutes } from "./modules/users/routes.js";
+import { registerZoneRoutes } from "./modules/zones/routes.js";
 import { registerActivityFeedRoutes } from "./modules/activity/feed-routes.js";
 import { ensureDefaultSuperAdmin } from "./auth/auth.js";
 
