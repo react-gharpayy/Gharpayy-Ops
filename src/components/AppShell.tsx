@@ -27,6 +27,7 @@ import { VpsConnectionStatus } from "./VpsConnectionStatus";
 import { ClientOnly } from "./ClientOnly";
 import { QuickCreateMenu } from "./QuickCreateMenu";
 import { LiveLeadsBridge } from "./LiveLeadsBridge";
+import { useAuthUser } from "@/lib/auth-store";
 
 function PipRouteSyncBridge() {
   const { active } = usePip();
