@@ -1,48 +1,173 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { signupUser, loginUser, signAccessToken } from "../auth/auth.js";
+import argon2 from "argon2";
+import { col } from "../db/mongo.js";
+import {
+  loginUser,
+  signAccessToken,
+  ensureDefaultSuperAdmin,
+  getUserById,
+  createManagedUser,
+  type UserDoc,
+} from "../auth/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { emit, newEventId } from "../realtime/event-bus.js";
+
+const LoginBody = z.object({
+  email: z.string().min(1).max(120).optional(),
+  username: z.string().min(1).max(120).optional(),
+  password: z.string().min(1).max(72),
+}).refine((v) => !!(v.email || v.username), { message: "email or username required" });
 
 const SignupBody = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(72),
   name: z.string().min(1).max(120),
-  role: z.enum(["admin", "sales", "ops", "owner"]).optional(),
+  role: z.enum(["super_admin", "manager", "admin", "member"]).optional(),
 });
-const LoginBody = z.object({
-  email: z.string().email(),
-  password: z.string().min(1).max(72),
+
+const UpdateMeBody = z.object({
+  password: z.string().min(8).max(72).optional(),
+  phone: z.string().max(40).optional(),
+  fullName: z.string().min(1).max(120).optional(),
 });
 
 export function registerAuthRoutes(app: FastifyInstance) {
+  // First request after boot triggers the bootstrap. Idempotent.
+  let bootstrapped = false;
+  app.addHook("preHandler", async (req) => {
+    if (!bootstrapped && req.url.startsWith("/api/auth/")) {
+      try {
+        await ensureDefaultSuperAdmin();
+      } catch (err) {
+        req.log.warn({ err }, "ensureDefaultSuperAdmin failed");
+      }
+      bootstrapped = true;
+    }
+  });
+
+  // ---------- LOGIN ----------
+  app.post("/api/auth/login", async (req, reply) => {
+    const body = LoginBody.parse(req.body);
+    const identifier = (body.email ?? body.username ?? "").trim();
+    try {
+      const claims = await loginUser(identifier, body.password);
+      const token = await signAccessToken(claims);
+      reply.setCookie("access_token", token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24,
+      });
+
+      // Audit
+      const evtId = newEventId();
+      await emit({
+        _id: evtId,
+        type: "evt.user.login",
+        occurredAt: new Date().toISOString(),
+        actor: claims.sub,
+        tenantId: claims.tenantId,
+        correlationId: evtId,
+        causationId: null,
+        version: 1,
+        payload: {
+          userId: claims.sub,
+          email: claims.email,
+          role: claims.role,
+          ip: req.ip,
+          ua: req.headers["user-agent"] ?? "",
+        },
+      }).catch(() => undefined);
+
+      return reply.send({
+        token,
+        user: {
+          id: claims.sub,
+          username: claims.username,
+          email: claims.email,
+          fullName: claims.fullName,
+          role: claims.role,
+          zones: claims.zones,
+          scopes: claims.scopes,
+        },
+      });
+    } catch (e) {
+      const err = e as Error & { code?: string };
+      const status = err.code === "FORBIDDEN" ? 403 : 401;
+      return reply.code(status).send({ code: err.code ?? "UNAUTHENTICATED", message: err.message });
+    }
+  });
+
+  // ---------- SIGNUP (kept; super_admin path requires existing super_admin token to use; otherwise rejects) ----------
   app.post("/api/auth/signup", async (req, reply) => {
     const body = SignupBody.parse(req.body);
     try {
-      const u = await signupUser(body);
-      return reply.send({ ok: true, userId: u.userId });
+      const role = body.role ?? "member";
+      // Block public super_admin self-creation
+      if (role === "super_admin") {
+        return reply.code(403).send({ code: "FORBIDDEN", message: "Super admin cannot self-register" });
+      }
+      const u = await createManagedUser({
+        fullName: body.name,
+        email: body.email,
+        password: body.password,
+        role,
+      });
+      return reply.send({ ok: true, userId: u._id });
     } catch (e) {
       const err = e as Error & { code?: string };
       return reply.code(409).send({ code: err.code ?? "CONFLICT", message: err.message });
     }
   });
 
-  app.post("/api/auth/login", async (req, reply) => {
-    const body = LoginBody.parse(req.body);
-    try {
-      const claims = await loginUser(body.email, body.password);
-      const token = await signAccessToken(claims);
-      reply.setCookie("access_token", token, {
-        httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production",
-        path: "/", maxAge: 60 * 15,
-      });
-      return reply.send({ token, user: claims });
-    } catch (e) {
-      const err = e as Error & { code?: string };
-      return reply.code(401).send({ code: err.code ?? "UNAUTHENTICATED", message: err.message });
+  // ---------- LOGOUT ----------
+  app.post("/api/auth/logout", { preHandler: [requireAuth] }, async (req, reply) => {
+    reply.clearCookie("access_token", { path: "/" });
+    if (req.user) {
+      await emit({
+        _id: newEventId(),
+        type: "evt.user.logout",
+        occurredAt: new Date().toISOString(),
+        actor: req.user.sub,
+        tenantId: req.user.tenantId,
+        correlationId: newEventId(),
+        causationId: null,
+        version: 1,
+        payload: { userId: req.user.sub, ip: req.ip },
+      }).catch(() => undefined);
     }
+    return reply.send({ ok: true });
   });
 
-  app.post("/api/auth/logout", async (_req, reply) => {
-    reply.clearCookie("access_token", { path: "/" });
+  // ---------- ME ----------
+  app.get("/api/auth/me", { preHandler: [requireAuth] }, async (req, reply) => {
+    const u = await getUserById(req.user!.sub);
+    if (!u) return reply.code(404).send({ code: "NOT_FOUND", message: "User not found" });
+    return reply.send({
+      user: {
+        id: u._id,
+        username: u.username,
+        email: u.email,
+        fullName: u.fullName,
+        phone: u.phone ?? "",
+        role: u.role,
+        status: u.status,
+        zones: u.zones ?? [],
+        scopes: req.user!.scopes,
+      },
+    });
+  });
+
+  // ---------- UPDATE ME ----------
+  app.patch("/api/auth/update", { preHandler: [requireAuth] }, async (req, reply) => {
+    const body = UpdateMeBody.parse(req.body);
+    const patch: Partial<UserDoc> = { updatedAt: new Date().toISOString() };
+    if (body.phone !== undefined) patch.phone = body.phone.trim();
+    if (body.fullName !== undefined) patch.fullName = body.fullName.trim();
+    if (body.password) patch.passwordHash = await argon2.hash(body.password);
+    await col<UserDoc>("users").updateOne({ _id: req.user!.sub }, { $set: patch });
     return reply.send({ ok: true });
   });
 }

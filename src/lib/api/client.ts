@@ -25,26 +25,58 @@ export const tokenStore = {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!API_URL) throw new ApiError("NO_API_URL", "VITE_API_URL not configured", 0);
   const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const t = tokenStore.get();
   if (t) headers.set("Authorization", `Bearer ${t}`);
 
   const res = await fetch(`${API_URL}${path}`, { ...init, headers, credentials: "include" });
   const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
+  const body = text ? safeJson(text) : null;
   if (!res.ok) {
     throw new ApiError(body?.code ?? "INTERNAL", body?.message ?? res.statusText, res.status, body?.details);
   }
   return body as T;
 }
+function safeJson(t: string): any {
+  try { return JSON.parse(t); } catch { return null; }
+}
 
-// When VITE_API_URL is set we trust the VPS as the source of truth — surface
-// errors to the UI instead of silently serving stale localStorage data. The
-// local adapter is only used when explicitly in local mode (no VITE_API_URL,
-// or `gharpayy.force_local` flag set).
 async function safe<T>(networkFn: () => Promise<T>, localFn: () => T): Promise<T> {
   if (isLocalMode()) return localFn();
   return await networkFn();
+}
+
+// ---------- Types shared with Settings UI ----------
+export type ManagedRole = "manager" | "admin" | "member";
+export type AnyRole = "super_admin" | ManagedRole;
+export type UserStatus = "active" | "inactive" | "invited" | "deleted";
+
+export interface ManagedUser {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  username: string;
+  role: AnyRole;
+  status: UserStatus;
+  zones: string[];
+  managerId?: string | null;
+  adminId?: string | null;
+  adminIds?: string[];
+  memberIds?: string[];
+  createdAt: string;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  fullName: string;
+  phone: string;
+  role: AnyRole;
+  status: UserStatus;
+  zones: string[];
+  scopes: string[];
 }
 
 export const api = {
@@ -53,13 +85,13 @@ export const api = {
 
   health: () => request<{ ok: true; ts: string }>("/api/health"),
 
-  signup: (b: { email: string; password: string; name: string; role?: string }) =>
+  signup: (b: { email: string; password: string; name: string; role?: ManagedRole }) =>
     request<{ ok: true; userId: string }>("/api/auth/signup", { method: "POST", body: JSON.stringify(b) }),
 
-  login: async (email: string, password: string) => {
-    const r = await request<{ token: string; user: unknown }>("/api/auth/login", {
+  login: async (identifier: string, password: string) => {
+    const r = await request<{ token: string; user: AuthUser }>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: identifier, username: identifier, password }),
     });
     tokenStore.set(r.token);
     return r;
@@ -68,6 +100,12 @@ export const api = {
   logout: async () => {
     await request("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     tokenStore.clear();
+  },
+
+  auth: {
+    me: () => request<{ user: AuthUser }>("/api/auth/me"),
+    update: (b: { password?: string; phone?: string; fullName?: string }) =>
+      request<{ ok: true }>("/api/auth/update", { method: "PATCH", body: JSON.stringify(b) }),
   },
 
   command: <R = unknown>(cmd: { _id: string; type: string; payload: Record<string, unknown> } & Record<string, unknown>) =>
@@ -114,11 +152,53 @@ export const api = {
       ),
   },
 
+  // ---------- User management (super_admin) ----------
   users: {
-    list: () =>
+    list: (status?: UserStatus) =>
+      request<ManagedUser[]>(`/api/users${status ? `?status=${status}` : ""}`),
+    listLite: () =>
       safe<{ items: { _id: string; name: string; email: string; role: string }[] }>(
-        () => request<{ items: { _id: string; name: string; email: string; role: string }[] }>("/api/users"),
+        () => request<{ items: { _id: string; name: string; email: string; role: string }[] }>("/api/users/list"),
         () => localAdapter.listUsers(),
+      ),
+    get: (id: string) => request<ManagedUser>(`/api/users/${id}`),
+    create: (b: {
+      fullName: string; email: string; phone?: string; password: string;
+      role: ManagedRole; zones?: string[]; managerId?: string | null; adminId?: string | null;
+    }) => request<ManagedUser>("/api/users", { method: "POST", body: JSON.stringify(b) }),
+    update: (id: string, b: Record<string, unknown>) =>
+      request<ManagedUser>(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(b) }),
+    resetPassword: (id: string, password: string) =>
+      request<{ ok: true }>(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify({ password }) }),
+    setStatus: (id: string, action: "activate" | "deactivate" | "delete") =>
+      request<{ ok: true }>(`/api/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ action }) }),
+  },
+
+  managers: {
+    list: () => request<(ManagedUser & { admins: ManagedUser[] })[]>("/api/managers"),
+  },
+  admins: {
+    list: () => request<ManagedUser[]>("/api/admins"),
+  },
+  members: {
+    list: () => request<ManagedUser[]>("/api/members"),
+  },
+  zones: {
+    list: () => request<{ id: string; name: string }[]>("/api/zones"),
+  },
+
+  activity: {
+    login: (limit = 100) =>
+      request<{ items: { _id: string; type: string; occurredAt: string; payload: Record<string, unknown> }[] }>(
+        `/api/activity/login?limit=${limit}`,
+      ),
+    all: (limit = 200) =>
+      request<{ items: { _id: string; type: string; occurredAt: string; payload: Record<string, unknown> }[] }>(
+        `/api/activity/all?limit=${limit}`,
+      ),
+    lead: (leadId: string, limit = 200) =>
+      request<{ items: { _id: string; type: string; occurredAt: string; payload: Record<string, unknown> }[] }>(
+        `/api/activity/lead?leadId=${encodeURIComponent(leadId)}&limit=${limit}`,
       ),
   },
 };

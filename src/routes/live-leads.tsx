@@ -27,7 +27,7 @@ function LiveLeadsPage() {
       <Card className="m-6 p-6">
         <h2 className="text-lg font-semibold mb-2">Sign in required</h2>
         <p className="text-sm text-muted-foreground mb-4">This page talks to your VPS Node API. Sign in to get a JWT.</p>
-        <Link to="/login" className="text-primary underline">Go to login →</Link>
+        <Link to="/login" search={{ redirect: "/" }} className="text-primary underline">Go to login →</Link>
       </Card>
     );
   }

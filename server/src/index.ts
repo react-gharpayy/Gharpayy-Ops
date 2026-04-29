@@ -13,6 +13,9 @@ import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerLeadsRoutes } from "./modules/leads/routes.js";
 import { registerTodosRoutes } from "./modules/todos/routes.js";
 import { registerActivitiesRoutes } from "./modules/activities/routes.js";
+import { registerUserRoutes } from "./modules/users/routes.js";
+import { registerActivityFeedRoutes } from "./modules/activity/feed-routes.js";
+import { ensureDefaultSuperAdmin } from "./auth/auth.js";
 
 async function main() {
   const app = Fastify({
@@ -53,6 +56,11 @@ async function main() {
   registerLeadsRoutes(app);
   registerTodosRoutes(app);
   registerActivitiesRoutes(app);
+  registerUserRoutes(app);
+  registerActivityFeedRoutes(app);
+
+  // Idempotent — bootstraps the canonical Super Admin if missing.
+  await ensureDefaultSuperAdmin().catch((err) => app.log.warn({ err }, "ensureDefaultSuperAdmin failed"));
 
   await attachSocketIO(app);
 
