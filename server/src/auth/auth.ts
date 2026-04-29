@@ -3,36 +3,62 @@ import { SignJWT, jwtVerify } from "jose";
 import { env } from "../config/env.js";
 import { col } from "../db/mongo.js";
 import { ulid } from "../../../src/contracts/ids.js";
-import { DEFAULT_SCOPES, type TopRole, type SubRole, type Scope } from "../../../src/contracts/roles.js";
+import { DEFAULT_SCOPES, type TopRole, type UserStatus, type Scope } from "../../../src/contracts/roles.js";
 
 const secret = new TextEncoder().encode(env.JWT_SECRET);
 
-interface UserDoc {
+export interface UserDoc {
   _id: string;
-  email: string;
+  username: string;       // lowercase, unique
+  email: string;          // lowercase, unique
+  phone?: string;
   passwordHash: string;
-  name: string;
-  tenantId: string;
-  createdAt: string;
-}
-
-interface UserRoleDoc {
-  _id: string;
-  userId: string;
+  fullName: string;
   role: TopRole;
-  subRole: SubRole | null;
-  zoneId: string | null;
+  status: UserStatus;
+  zones: string[];
+  managerId?: string | null;   // for admin
+  adminId?: string | null;     // for member
+  adminIds?: string[];         // for manager
+  memberIds?: string[];        // for admin
   tenantId: string;
+  invitedAt?: string | null;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface JwtClaims {
   sub: string;
   email: string;
+  username: string;
+  fullName: string;
   role: TopRole;
-  subRole: SubRole | null;
-  zoneId: string | null;
+  zones: string[];
   tenantId: string;
   scopes: Scope[];
+  // legacy fields kept optional so existing handlers compile
+  subRole?: null;
+  zoneId?: string | null;
+}
+
+export function normalizeUsername(value?: string): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function buildClaims(u: UserDoc): JwtClaims {
+  return {
+    sub: u._id,
+    email: u.email,
+    username: u.username,
+    fullName: u.fullName,
+    role: u.role,
+    zones: u.zones ?? [],
+    tenantId: u.tenantId,
+    scopes: DEFAULT_SCOPES[u.role],
+    subRole: null,
+    zoneId: null,
+  };
 }
 
 export async function signAccessToken(claims: JwtClaims): Promise<string> {
@@ -48,53 +74,140 @@ export async function verifyToken(token: string): Promise<JwtClaims> {
   return payload as unknown as JwtClaims;
 }
 
-export async function signupUser(opts: { email: string; password: string; name: string; role?: TopRole; subRole?: SubRole | null; zoneId?: string | null }) {
-  const email = opts.email.trim().toLowerCase();
-  const exists = await col<UserDoc>("users").findOne({ email });
-  if (exists) throw Object.assign(new Error("Email already registered"), { code: "CONFLICT" });
+/**
+ * Idempotent bootstrap of the canonical Super Admin account.
+ * Credentials (per product owner): superadmin@gharpayy.com / superadmin#gharpayy
+ */
+export async function ensureDefaultSuperAdmin(): Promise<void> {
+  const username = "superadmin@gharpayy.com";
+  const email = "superadmin@gharpayy.com";
+  const password = "superadmin#gharpayy";
+  const fullName = "Gharpayy Super Admin";
 
-  const userId = ulid();
-  const passwordHash = await argon2.hash(opts.password);
+  const users = col<UserDoc>("users");
+  const existing = await users.findOne({
+    $or: [{ username }, { email }, { username: "superadmin@gharpayy" }, { email: "superadmin@gharpayy" }],
+  });
+
   const now = new Date().toISOString();
-  const role: TopRole = opts.role ?? "sales";
 
-  await col<UserDoc>("users").insertOne({
-    _id: userId,
-    email,
-    passwordHash,
-    name: opts.name,
-    tenantId: env.DEFAULT_TENANT,
-    createdAt: now,
-  });
+  if (existing) {
+    const patch: Partial<UserDoc> = {};
+    if (existing.username !== username) patch.username = username;
+    if (existing.email !== email) patch.email = email;
+    if (existing.role !== "super_admin") patch.role = "super_admin";
+    if (existing.status !== "active") patch.status = "active";
+    if (!existing.fullName) patch.fullName = fullName;
+    if (!existing.tenantId) patch.tenantId = env.DEFAULT_TENANT;
+    if (Object.keys(patch).length) {
+      patch.updatedAt = now;
+      await users.updateOne({ _id: existing._id }, { $set: patch });
+    }
+    return;
+  }
 
-  await col<UserRoleDoc>("user_roles").insertOne({
+  await users.insertOne({
     _id: ulid(),
-    userId,
-    role,
-    subRole: opts.subRole ?? null,
-    zoneId: opts.zoneId ?? null,
+    username,
+    email,
+    phone: "",
+    passwordHash: await argon2.hash(password),
+    fullName,
+    role: "super_admin",
+    status: "active",
+    zones: [],
+    managerId: null,
+    adminId: null,
+    adminIds: [],
+    memberIds: [],
     tenantId: env.DEFAULT_TENANT,
+    invitedAt: null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
   });
-
-  return { userId, email, role };
 }
 
-export async function loginUser(email: string, password: string): Promise<JwtClaims> {
-  const user = await col<UserDoc>("users").findOne({ email: email.trim().toLowerCase() });
+export async function loginUser(identifier: string, password: string): Promise<JwtClaims> {
+  const users = col<UserDoc>("users");
+  const id = normalizeUsername(identifier);
+  const user = await users.findOne({ $or: [{ username: id }, { email: id }] });
   if (!user) throw Object.assign(new Error("Invalid credentials"), { code: "UNAUTHENTICATED" });
+
+  if (user.status === "inactive") {
+    throw Object.assign(new Error("Account is deactivated. Contact your administrator."), { code: "FORBIDDEN" });
+  }
+  if (user.status === "deleted") {
+    throw Object.assign(new Error("Account is no longer available."), { code: "FORBIDDEN" });
+  }
+
   const ok = await argon2.verify(user.passwordHash, password);
   if (!ok) throw Object.assign(new Error("Invalid credentials"), { code: "UNAUTHENTICATED" });
 
-  const role = await col<UserRoleDoc>("user_roles").findOne({ userId: user._id });
-  if (!role) throw Object.assign(new Error("User has no role"), { code: "FORBIDDEN" });
+  if (user.status === "invited") {
+    await users.updateOne({ _id: user._id }, { $set: { status: "active", updatedAt: new Date().toISOString() } });
+    user.status = "active";
+  }
 
-  return {
-    sub: user._id,
-    email: user.email,
-    role: role.role,
-    subRole: role.subRole,
-    zoneId: role.zoneId,
-    tenantId: user.tenantId,
-    scopes: DEFAULT_SCOPES[role.role],
-  };
+  return buildClaims(user);
 }
+
+export async function getUserById(id: string): Promise<UserDoc | null> {
+  return col<UserDoc>("users").findOne({ _id: id });
+}
+
+/**
+ * Used by the Super Admin "Add User" form. Caller authorization happens at the
+ * route level (super_admin only).
+ */
+export async function createManagedUser(opts: {
+  fullName: string;
+  email: string;
+  phone?: string;
+  password: string;
+  role: TopRole;
+  zones?: string[];
+  managerId?: string | null;
+  adminId?: string | null;
+}): Promise<UserDoc> {
+  const users = col<UserDoc>("users");
+  const email = normalizeUsername(opts.email);
+  const username = email; // username == email for managed users
+  const exists = await users.findOne({ $or: [{ email }, { username }] });
+  if (exists) throw Object.assign(new Error("Email already registered"), { code: "CONFLICT" });
+
+  const now = new Date().toISOString();
+  const doc: UserDoc = {
+    _id: ulid(),
+    username,
+    email,
+    phone: opts.phone?.trim() ?? "",
+    passwordHash: await argon2.hash(opts.password),
+    fullName: opts.fullName.trim(),
+    role: opts.role,
+    status: "active",
+    zones: opts.zones ?? [],
+    managerId: opts.role === "admin" ? (opts.managerId ?? null) : null,
+    adminId: opts.role === "member" ? (opts.adminId ?? null) : null,
+    adminIds: opts.role === "manager" ? [] : [],
+    memberIds: opts.role === "admin" ? [] : [],
+    tenantId: env.DEFAULT_TENANT,
+    invitedAt: null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await users.insertOne(doc);
+
+  // Wire parent linkage (best-effort, non-blocking on failure)
+  if (opts.role === "admin" && opts.managerId) {
+    await users.updateOne({ _id: opts.managerId }, { $addToSet: { adminIds: doc._id } }).catch(() => undefined);
+  }
+  if (opts.role === "member" && opts.adminId) {
+    await users.updateOne({ _id: opts.adminId }, { $addToSet: { memberIds: doc._id } }).catch(() => undefined);
+  }
+
+  return doc;
+}
+
+export { buildClaims };
