@@ -176,8 +176,6 @@ export async function createManagedUser(opts: {
   password: string;
   role: TopRole;
   zones?: string[];
-  managerId?: string | null;
-  adminId?: string | null;
 }): Promise<UserDoc> {
   const users = col<UserDoc>("users");
   const email = normalizeUsername(opts.email);
@@ -196,10 +194,10 @@ export async function createManagedUser(opts: {
     role: opts.role,
     status: "active",
     zones: opts.zones ?? [],
-    managerId: opts.role === "admin" ? (opts.managerId ?? null) : null,
-    adminId: opts.role === "member" ? (opts.adminId ?? null) : null,
-    adminIds: opts.role === "manager" ? [] : [],
-    memberIds: opts.role === "admin" ? [] : [],
+    managerId: null,
+    adminId: null,
+    adminIds: [],
+    memberIds: [],
     tenantId: env.DEFAULT_TENANT,
     invitedAt: null,
     deletedAt: null,
@@ -207,15 +205,6 @@ export async function createManagedUser(opts: {
     updatedAt: now,
   };
   await users.insertOne(doc);
-
-  // Wire parent linkage (best-effort, non-blocking on failure)
-  if (opts.role === "admin" && opts.managerId) {
-    await users.updateOne({ _id: opts.managerId }, { $addToSet: { adminIds: doc._id } }).catch(() => undefined);
-  }
-  if (opts.role === "member" && opts.adminId) {
-    await users.updateOne({ _id: opts.adminId }, { $addToSet: { memberIds: doc._id } }).catch(() => undefined);
-  }
-
   return doc;
 }
 

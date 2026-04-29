@@ -6,8 +6,6 @@ import { requireAuth, requireScope } from "../../middleware/auth.js";
 import { createManagedUser, type UserDoc } from "../../auth/auth.js";
 import type { TopRole } from "../../../../src/contracts/roles.js";
 
-const ZONES = ["Zone1", "Zone2", "Zone3", "Zone4", "Zone5"] as const;
-
 const CreateBody = z.object({
   fullName: z.string().min(1).max(120),
   email: z.string().email(),
@@ -15,8 +13,6 @@ const CreateBody = z.object({
   password: z.string().min(8).max(72),
   role: z.enum(["manager", "admin", "member"]),
   zones: z.array(z.string()).optional(),
-  managerId: z.string().optional().nullable(),
-  adminId: z.string().optional().nullable(),
 });
 
 const UpdateBody = z.object({
@@ -59,11 +55,6 @@ function userOut(u: UserDoc) {
 
 export function registerUserRoutes(app: FastifyInstance) {
   const users = () => col<UserDoc>("users");
-
-  // ---------- ZONES (open to any authed user; UI needs them) ----------
-  app.get("/api/zones", { preHandler: [requireAuth] }, async (_req, reply) => {
-    return reply.send(ZONES.map((name, i) => ({ id: `z-${i + 1}`, name })));
-  });
 
   // ---------- LIST USERS (super_admin) ----------
   app.get("/api/users", { preHandler: [requireAuth, requireScope("user.admin")] }, async (req, reply) => {
