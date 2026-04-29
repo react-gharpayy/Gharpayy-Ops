@@ -11,7 +11,33 @@ import {
   type UserDoc,
 } from "../auth/auth.js";
 import { requireAuth } from "../middleware/auth.js";
-import { emit, newEventId } from "../realtime/event-bus.js";
+import { newEventId } from "../realtime/event-bus.js";
+
+// Auth audit events live outside the strict DomainEvent union; write directly.
+async function auditAuthEvent(doc: {
+  type: "evt.user.login" | "evt.user.logout";
+  actor: string;
+  tenantId: string;
+  payload: Record<string, unknown>;
+}) {
+  const id = newEventId();
+  await col("entity_event").insertOne({
+    _id: id,
+    type: doc.type,
+    occurredAt: new Date().toISOString(),
+    actor: doc.actor,
+    tenantId: doc.tenantId,
+    correlationId: id,
+    causationId: null,
+    version: 1,
+    payload: doc.payload,
+    aggregateType: "user",
+    aggregateId: doc.actor,
+    seq: null,
+    publishedAt: null,
+    publishAttempts: 0,
+  } as never);
+}
 
 const LoginBody = z.object({
   email: z.string().min(1).max(120).optional(),
