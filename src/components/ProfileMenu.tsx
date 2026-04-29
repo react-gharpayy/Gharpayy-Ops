@@ -136,9 +136,9 @@ export function ProfileMenu() {
             try {
               const { useAuthUser } = await import("@/lib/auth-store");
               await useAuthUser.getState().signOut();
-              navigate({ to: "/login" });
+              navigate({ to: "/login", search: { redirect: "/" } });
             } catch {
-              navigate({ to: "/login" });
+              navigate({ to: "/login", search: { redirect: "/" } });
             }
           }}
         >
