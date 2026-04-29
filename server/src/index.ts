@@ -71,6 +71,7 @@ h1{margin:0 0 .5rem;font-size:1.5rem;color:#34d399}p{margin:.25rem 0;color:#94a3
   registerTodosRoutes(app);
   registerActivitiesRoutes(app);
   registerUserRoutes(app);
+  registerZoneRoutes(app);
   registerActivityFeedRoutes(app);
 
   // Idempotent — bootstraps the canonical Super Admin if missing.
