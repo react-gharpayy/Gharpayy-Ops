@@ -146,15 +146,10 @@ export function registerAuthRoutes(app: FastifyInstance) {
   app.post("/api/auth/logout", { preHandler: [requireAuth] }, async (req, reply) => {
     reply.clearCookie("access_token", { path: "/" });
     if (req.user) {
-      await emit({
-        _id: newEventId(),
+      await auditAuthEvent({
         type: "evt.user.logout",
-        occurredAt: new Date().toISOString(),
         actor: req.user.sub,
         tenantId: req.user.tenantId,
-        correlationId: newEventId(),
-        causationId: null,
-        version: 1,
         payload: { userId: req.user.sub, ip: req.ip },
       }).catch(() => undefined);
     }
