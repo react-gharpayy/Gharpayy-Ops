@@ -26,10 +26,4 @@ export function registerTodosRoutes(app: FastifyInstance) {
     const items = await col<Todo>("todos").find(filter).sort({ _id: -1 }).limit(q.limit).toArray();
     return reply.send({ items });
   });
-
-  app.get("/api/users", { preHandler: [requireAuth] }, async (req, reply) => {
-    const users = await col<{ _id: string; name: string; email: string }>("users")
-      .find({ tenantId: req.user!.tenantId }).project({ passwordHash: 0 }).limit(200).toArray();
-    return reply.send({ items: users });
-  });
 }
