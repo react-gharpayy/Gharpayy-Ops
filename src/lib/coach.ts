@@ -440,10 +440,12 @@ function xpForActivity(kind: ActivityLog["kind"]): number {
 
 function missionTargetFor(role: Role): number {
   switch (role) {
-    case "tcm":       return 8;
-    case "flow-ops":  return 12;
-    case "hr":        return 6;
-    case "owner":     return 3;
+    case "tcm":          return 8;
+    case "flow-ops":     return 12;
+    case "hr":           return 6;
+    case "owner":        return 3;
+    case "super-admin":  return 10;
+    default:             return 6;
   }
 }
 

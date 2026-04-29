@@ -1,4 +1,4 @@
-export type Role = "flow-ops" | "tcm" | "hr" | "owner";
+export type Role = "flow-ops" | "tcm" | "hr" | "owner" | "super-admin";
 export type Intent = "hot" | "warm" | "cold";
 export type TourStatus = "scheduled" | "completed" | "no-show" | "cancelled";
 export type ClientDecision = "booked" | "thinking" | "dropped" | null;

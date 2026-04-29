@@ -155,7 +155,21 @@ export function AppShell({ children }: { children: ReactNode }) {
       { to: "/owner/insights", label: "Insights", icon: IndianRupee },
       { to: "/my-tasks", label: "My Tasks", icon: ListTodo },
     ],
+    "super-admin": [
+      { to: "/today", label: "Today", icon: Sun, badge: queue.length },
+      { to: "/myt/leads", label: "Leads", icon: Target, accent: true },
+      { to: "/myt/war-room", label: "War Room", icon: Swords },
+      { to: "/myt/team", label: "Team", icon: Users },
+      { to: "/revenue", label: "Revenue", icon: IndianRupee },
+      { to: "/settings", label: "Settings", icon: Settings, accent: true },
+    ],
   };
+
+  // Append Settings to every persona's nav (after primary items).
+  Object.keys(navByRole).forEach((k) => {
+    const arr = navByRole[k as typeof role];
+    if (!arr.some((n) => n.to === "/settings")) arr.push({ to: "/settings", label: "Settings", icon: Settings });
+  });
   const items = navByRole[role];
   const persona = activePersona(role, role === "tcm" ? currentTcmId : undefined);
 
@@ -184,6 +198,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             tcm: { label: "TCM Desk", dot: "bg-accent" },
             hr: { label: "HR / Leadership", dot: "bg-success" },
             owner: { label: "Owner Portal", dot: "bg-warning" },
+            "super-admin": { label: "Super Admin", dot: "bg-destructive" },
           } as const;
           const meta = roleMeta[role];
           const userName = role === "tcm" ? tcms.find((t) => t.id === currentTcmId)?.name : null;
@@ -248,6 +263,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <SelectItem value="tcm">TCM</SelectItem>
               <SelectItem value="hr">HR / Leadership</SelectItem>
               <SelectItem value="owner">Property Owner</SelectItem>
+              <SelectItem value="super-admin">Super Admin</SelectItem>
             </SelectContent>
           </Select>
           {role === "tcm" && (
