@@ -56,11 +56,6 @@ function userOut(u: UserDoc) {
 export function registerUserRoutes(app: FastifyInstance) {
   const users = () => col<UserDoc>("users");
 
-  // ---------- ZONES (open to any authed user; UI needs them) ----------
-  app.get("/api/zones", { preHandler: [requireAuth] }, async (_req, reply) => {
-    return reply.send(ZONES.map((name, i) => ({ id: `z-${i + 1}`, name })));
-  });
-
   // ---------- LIST USERS (super_admin) ----------
   app.get("/api/users", { preHandler: [requireAuth, requireScope("user.admin")] }, async (req, reply) => {
     const q = z.object({ status: z.enum(["active", "inactive", "invited", "deleted"]).optional() }).parse(req.query);
