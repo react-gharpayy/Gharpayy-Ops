@@ -124,14 +124,24 @@ export function ProfileMenu() {
         <DropdownMenuSeparator />
 
         <DropdownMenuItem asChild>
-          <Link to="/myt/settings"><Settings className="mr-2 h-4 w-4" /> Settings</Link>
+          <Link to="/settings"><Settings className="mr-2 h-4 w-4" /> Settings</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/help"><HelpCircle className="mr-2 h-4 w-4" /> How to use</Link>
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => toast.info("Sign out is local-only in this build.")}>
+        <DropdownMenuItem
+          onSelect={async () => {
+            try {
+              const { useAuthUser } = await import("@/lib/auth-store");
+              await useAuthUser.getState().signOut();
+              navigate({ to: "/login" });
+            } catch {
+              navigate({ to: "/login" });
+            }
+          }}
+        >
           <LogOut className="mr-2 h-4 w-4" /> Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
