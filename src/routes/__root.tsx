@@ -13,8 +13,7 @@ import { SettingsProvider as MYTSettingsProvider } from "@/myt/lib/settings-cont
 import { TourDataProvider as MYTTourDataProvider } from "@/myt/lib/tour-data-context";
 import { OwnerProvider } from "@/owner/owner-context";
 import { OnboardingWalkthrough } from "@/components/OnboardingWalkthrough";
-import { useEffect } from "react";
-import { useAuthUser } from "@/lib/auth-store";
+import { AuthGate } from "@/components/AuthGate";
 
 import appCss from "../styles.css?url";
 
