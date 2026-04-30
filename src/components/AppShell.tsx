@@ -163,7 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!arr.some((n) => n.to === "/settings")) arr.push({ to: "/settings", label: "Settings", icon: Settings });
   });
   const items = navByRole[role];
-  const persona = activePersona(role, role === "tcm" ? currentTcmId : undefined);
+  
 
   const isActive = (to: string) => (to === "/" ? path === "/" : path === to || path.startsWith(to + "/"));
 
