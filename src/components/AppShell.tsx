@@ -278,17 +278,22 @@ export function AppShell({ children }: { children: ReactNode }) {
               owner: "Property Owner",
               "super-admin": "Super Admin",
             };
+            const userName = authUser?.fullName || authUser?.username || authUser?.email || "";
             if (allowed.length <= 1) {
               return (
-                <div className="bg-sidebar-accent border border-sidebar-border text-sidebar-accent-foreground h-8 text-xs rounded-md px-3 flex items-center">
-                  {labels[role] ?? role}
+                <div className="bg-sidebar-accent border border-sidebar-border text-sidebar-accent-foreground rounded-md px-3 py-1.5 flex flex-col leading-tight">
+                  <span className="text-xs">{labels[role] ?? role}</span>
+                  {userName && <span className="text-[10px] text-sidebar-foreground/70 truncate">{userName}</span>}
                 </div>
               );
             }
             return (
               <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
-                <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-sidebar-accent-foreground h-8 text-xs">
-                  <SelectValue />
+                <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-sidebar-accent-foreground h-auto py-1.5 text-xs">
+                  <div className="flex flex-col items-start leading-tight">
+                    <span>{labels[role] ?? role}</span>
+                    {userName && <span className="text-[10px] text-sidebar-foreground/70 truncate">{userName}</span>}
+                  </div>
                 </SelectTrigger>
                 <SelectContent>
                   {allowed.map((p) => (
@@ -298,11 +303,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Select>
             );
           })()}
-          {(authUser?.fullName || authUser?.username || authUser?.email) && (
-            <div className="px-1 text-[11px] text-sidebar-foreground/80 truncate">
-              {authUser?.fullName || authUser?.username || authUser?.email}
-            </div>
-          )}
           {role === "tcm" && allowed.includes("tcm") && (
             <Select value={currentTcmId} onValueChange={setCurrentTcmId}>
               <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-sidebar-accent-foreground h-8 text-xs">
