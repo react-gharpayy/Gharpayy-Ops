@@ -1,75 +1,67 @@
-# Zones — match old CRM 1:1, separate sidebar route, fix rename
+## Goal
 
-## What we're doing
+Tie the bottom-left **"View as"** dropdown in the sidebar to the **real logged-in role** so each role only sees the personas they're allowed to use, and add a brand-new **`owner` (Property Owner)** top-level role that Super Admin can create credentials for.
 
-1. Move zones **out of Settings** into a standalone `/zones` route with its own sidebar entry (super_admin only — same gating as Settings).
-2. Make the page match the old CRM's Zones tab exactly: card grid, color dot, city line, area chips, "New Zone" + "Edit Zone" dialogs.
-3. Add 3 fields when creating/editing a zone (matching old CRM):
-   - **Zone name** (required) — e.g. "Marathahalli Cluster"
-   - **City** (text, defaults to "Bangalore")
-   - **Areas** — comma-separated input (e.g. "Marathahalli, Varthur, Kundalahalli"), stored as `string[]`
-   - Plus the old CRM's color picker (8 preset swatches) — small but it's part of the visual parity
-4. Fix "Failed to fetch" on rename.
-5. Defer Team Queues + Escalations tabs from the old CRM (you said "3 options to add" was the focus). They can come later.
+## Role → "View as" visibility matrix
 
-## Why "Failed to fetch" happens & the fix
+| Logged-in DB role | Dropdown options shown                  | Default selection |
+|-------------------|------------------------------------------|-------------------|
+| `super_admin`     | Super Admin only (dropdown hidden / locked) | Super Admin       |
+| `manager`         | HR / Leadership only                     | HR / Leadership   |
+| `admin`           | HR / Leadership only                     | HR / Leadership   |
+| `member`          | Flow Ops, TCM                            | Flow Ops          |
+| `owner` (NEW)     | Property Owner only                      | Property Owner    |
 
-The new `PUT /api/zones/:id` route is committed in this repo (`server/src/modules/zones/routes.ts`) and registered in `server/src/index.ts`, but your VPS still runs the older build that only had `GET` + `POST`. `list` works because GET existed before; `update` returns a 404 from the Node process which the browser surfaces as a network failure if the older build also lacked the route prefix.
+The dropdown becomes a plain label whenever there is only one option.
 
-**Fix is operational, not code:** redeploy the backend on your VPS. After implementation I'll give you the exact command. CORS is already wide open via `@fastify/cors` for all methods.
+## Changes
 
-I'll also harden the backend in this pass:
-- Extend `ZoneDoc` with `city: string` and `areas: string[]` and `color: string`.
-- Accept those fields in POST + PUT (zod schemas).
-- Return them in the response shape.
-- Backfill seed zones with empty `city: ""`, `areas: []` so existing data isn't broken.
+### 1. Add `owner` as a 4th top-level DB role
 
-## Files to change
+- `src/contracts/roles.ts` — add `"owner"` to the `TopRole` enum and give it a sensible scope set (read-only on inventory/tours for their own property; no lead/user admin).
+- `server/src/modules/users/routes.ts` — accept `"owner"` in the `CreateBody.role` enum and the `roleList` helper so `/api/users` create + filter works.
+- `server/src/auth/auth.ts` — make sure `createManagedUser` accepts `owner` and `DEFAULT_SCOPES` covers it (no special zone requirement).
+- `src/components/settings/AddUserForm.tsx` — add `<SelectItem value="owner">Property Owner</SelectItem>`. Owner does **not** require a zone (skip the zone block for `role === "owner"`).
+- `src/components/settings/RolesTab.tsx` — add an "Owners" section/tab listing all owner accounts (same card style as Admins/Members, no zone chip).
+- `src/components/settings/UsersTab.tsx` — render `owner` in the role filter / badge.
 
-### Backend
-- `server/src/modules/zones/routes.ts` — extend `ZoneDoc` (add `city`, `areas`, `color`), update `CreateBody` + `UpdateBody` zod schemas, update list/create/update responses to include all fields. Seed zones get empty city/areas/color.
+### 2. Wire the sidebar persona switcher to the real role
 
-### Frontend
-- `src/lib/api/client.ts` — extend `Zone` shape returned by `api.zones.*` to `{ id, name, city, areas, color }`. Update `create`/`update` signatures to accept the full payload.
-- `src/routes/zones.tsx` — **NEW** route. Wraps `<ZonesPage />` in `<AppShell>`. Super-admin gated (redirect non-admins to `/`).
-- `src/components/ZonesPage.tsx` — **NEW**. Mirrors the old CRM Zones tab: header with "X active zones" count + "New Zone" button, card grid with color dot, name, "City: …" line, area chips, edit pencil. New/Edit dialog: 3 inputs (name, city, areas) + 8-color swatch picker. Same copy/placeholders as old CRM.
-- `src/components/AppShell.tsx` — add `{ to: "/zones", label: "Zones", icon: MapPin }` to the super_admin nav array (placed right above Settings).
-- `src/components/settings/SuperAdminSettingsPanel.tsx` — remove the Zones tab from the tabs array.
-- `src/components/settings/ZonesTab.tsx` — delete (no longer used).
+File: `src/components/AppShell.tsx` (the `View as` Select around line 268-292).
 
-## Old CRM dialog reference (what I'm copying)
+- Read `authUser.role` from `useAuthUser`.
+- Compute `allowedPersonas` from the matrix above:
+  ```ts
+  const allowed: Record<DbRole, PersonaRole[]> = {
+    super_admin: ["super-admin"],
+    manager:     ["hr"],
+    admin:       ["hr"],
+    member:      ["flow-ops", "tcm"],
+    owner:       ["owner"],
+  };
+  ```
+- On hydrate, if current `role` is not in `allowed[authUser.role]`, call `setRole(allowed[authUser.role][0])`. Replace the existing super-admin-only effect with this generic one.
+- Render the `<Select>` only when `allowed[...]` has length > 1. Otherwise show a static read-only chip with the persona label (same styling as the current "View as" hint).
+- Same treatment in the mobile version (`MobileNavContent` in `src/myt/components/AppSidebar.tsx`) — gate the role buttons by the same `allowed` set.
 
-```text
-┌─ Create Zone ──────────────────────┐
-│ [Zone name (e.g. Marathahalli ...)] │
-│ [City                            ]  │
-│ [Areas (comma-separated: M, V, K)]  │
-│ ● ● ● ● ● ● ● ●  ← 8 color swatches │
-│ [        Create Zone        ]       │
-└────────────────────────────────────┘
-```
+### 3. Login + routing for owner
 
-Card layout:
+- `src/routes/login.tsx` — no change needed; existing JWT login already returns `user.role`.
+- `src/components/AuthGate.tsx` — confirm it allows `owner` through (no role-based redirect that bounces them).
+- When an `owner` lands on `/`, default them into the existing `/owner` route (the owner persona's nav already exists in `AppShell.navByRole.owner`).
 
-```text
-┌──────────────────────────┐
-│ ● Marathahalli Cluster ✎ │
-│ City: Bangalore          │
-│ [Marathahalli] [Varthur] │
-│ [Kundalahalli]           │
-└──────────────────────────┘
-```
+### 4. Memory
 
-## After I implement — VPS redeploy
+Update `mem://index.md` Core line to record the 5 top-level DB roles (`super_admin, manager, admin, member, owner`) and the View-as visibility matrix so future sessions don't regress this.
 
-```bash
-cd /root/desktop/tdynil/server
-git pull && npm run build && pm2 restart all
-```
+## Technical notes
 
-Then test rename in /zones — it'll work.
+- The legacy `Role` type in `src/lib/types.ts` (`"flow-ops" | "tcm" | "hr" | "owner" | "super-admin"`) is the **persona/view** enum used by mock data, NOT the DB role. We keep it as-is — the matrix maps DB `TopRole` → persona `Role`.
+- Persona registry already has `OWNERS` entries in `src/lib/personas.ts`, so the owner view works out of the box.
+- Backend: existing `requireScope` middleware stays; we just extend `DEFAULT_SCOPES` for `owner`.
+- No DB migration needed — `users.role` is a free string in Mongo; adding `"owner"` is purely a schema-validation change in zod.
 
-## Out of scope (ask later if you want)
-- Team Queues tab (old CRM had one — needs a `team_queues` collection + member assignment)
-- Escalations tab (needs `escalations` collection + workflow)
-- Linking zones to lead routing in the lead create/assign flows
+## Out of scope
+
+- Building the owner-facing property dashboard data flows (the routes exist; data is mock). Only auth + sidebar wiring is in this change.
+- Per-property scoping for owner accounts (which property they own) — can be a follow-up; for now the owner sees the same `/owner/*` routes as the persona view.
