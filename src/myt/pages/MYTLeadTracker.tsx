@@ -79,7 +79,7 @@ export default function MYTLeadTracker() {
   const selectClass = "w-full h-10 bg-surface-2 border border-border rounded-md px-3 text-sm text-foreground";
 
   return (
-    <div className="space-y-4 animate-slide-up">
+    <div className="space-y-3 animate-slide-up">
       {/* Compact header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="min-w-0">
