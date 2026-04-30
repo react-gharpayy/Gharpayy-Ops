@@ -47,7 +47,7 @@ async function safe<T>(networkFn: () => Promise<T>, localFn: () => T): Promise<T
 }
 
 // ---------- Types shared with Settings UI ----------
-export type ManagedRole = "manager" | "admin" | "member";
+export type ManagedRole = "manager" | "admin" | "member" | "owner";
 export type AnyRole = "super_admin" | ManagedRole;
 export type UserStatus = "active" | "inactive" | "invited" | "deleted";
 
@@ -198,6 +198,9 @@ export const api = {
   },
   members: {
     list: () => request<ManagedUser[]>("/api/members"),
+  },
+  owners: {
+    list: () => request<ManagedUser[]>("/api/owners"),
   },
   zones: {
     list: () => request<Zone[]>("/api/zones"),
