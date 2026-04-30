@@ -11,7 +11,7 @@ const CreateBody = z.object({
   email: z.string().email(),
   phone: z.string().min(0).max(40).optional(),
   password: z.string().min(8).max(72),
-  role: z.enum(["manager", "admin", "member"]),
+  role: z.enum(["manager", "admin", "member", "owner"]),
   zones: z.array(z.string()).optional(),
 });
 
