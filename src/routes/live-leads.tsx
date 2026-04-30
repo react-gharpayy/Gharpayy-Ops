@@ -48,7 +48,7 @@ function LiveLeadsPage() {
         </TabsList>
 
         <TabsContent value="paste">
-          <LeadPasteParser onSubmit={(p) => createLead(p)} />
+          <LeadPasteParser />
         </TabsContent>
 
         <TabsContent value="list">
