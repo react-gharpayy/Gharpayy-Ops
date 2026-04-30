@@ -269,12 +269,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="p-3 border-t border-sidebar-border space-y-2">
-          <div className="text-[10px] text-sidebar-foreground/70 flex items-center justify-between px-1">
-            <span>Quick jump</span>
-            <kbd className="inline-flex items-center gap-0.5 rounded border border-sidebar-border bg-sidebar-accent px-1.5 py-0.5 font-mono text-sidebar-accent-foreground">
-              <Command className="h-2.5 w-2.5" />K
-            </kbd>
-          </div>
           <div className="text-[10px] uppercase tracking-wider text-sidebar-foreground px-1">View as</div>
           {(() => {
             const labels: Record<string, string> = {
