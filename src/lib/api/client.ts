@@ -25,7 +25,7 @@ export const tokenStore = {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!API_URL) throw new ApiError("NO_API_URL", "VITE_API_URL not configured", 0);
   const headers = new Headers(init.headers);
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (init.body != null && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const t = tokenStore.get();
   if (t) headers.set("Authorization", `Bearer ${t}`);
 
