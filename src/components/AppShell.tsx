@@ -292,7 +292,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <SelectTrigger className="bg-sidebar-accent border-sidebar-border text-sidebar-accent-foreground h-auto py-1.5 text-xs">
                   <div className="flex flex-col items-start leading-tight">
                     <span>{labels[role] ?? role}</span>
-                    {userName && <span className="text-[10px] text-sidebar-foreground/70 truncate">{userName}</span>}
+                    {userName && <span className="text-[10px] text-sidebar-accent-foreground truncate">{userName}</span>}
                   </div>
                 </SelectTrigger>
                 <SelectContent>
