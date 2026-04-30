@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/lib/store";
+import { useAuthUser } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
 import {
   UserRound,
