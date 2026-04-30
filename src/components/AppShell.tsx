@@ -320,7 +320,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <PersonaPulse role={role} persona={persona} queueCount={queue.length} overdueCount={overdueCount} bookingsCount={bookings.length} />
 
         <PipMount>
           <main className="flex-1 w-full max-w-[1400px] mx-auto p-4 pb-24 md:p-6 md:pb-6">{children}</main>
