@@ -13,8 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Target, ListTodo, Activity as ActivityIcon, CalendarPlus, FileText, MessageSquare } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { LeadPasteParser } from "@/components/leads/LeadPasteParser";
-import { useApp } from "@/lib/store";
+import { QuickAddLeadPanel } from "@/components/leads/QuickAddLeadPanel";
 import { useTodos } from "@/hooks/useTodos";
 import { toast } from "sonner";
 
@@ -24,7 +23,6 @@ export function QuickCreateMenu() {
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState<DialogKey>(null);
   const navigate = useNavigate();
-  const { tcms, addLead } = useApp();
 
   // Global ⌘N / Ctrl+N — open menu (or skip if a Lovable input is focused with modifier)
   useEffect(() => {
@@ -76,36 +74,8 @@ export function QuickCreateMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Lead paste */}
-      <Dialog open={dialog === "lead"} onOpenChange={(o) => !o && setDialog(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Paste a lead — auto-extract fields</DialogTitle></DialogHeader>
-          <LeadPasteParser onSubmit={async (payload) => {
-            const now = new Date().toISOString();
-            addLead({
-              id: `lead-${Date.now()}`,
-              name: payload.name,
-              phone: payload.phone,
-              source: payload.source ?? "paste",
-              budget: payload.budget,
-              moveInDate: payload.moveInDate,
-              preferredArea: payload.preferredArea,
-              assignedTcmId: tcms[0]?.id ?? "",
-              stage: "new",
-              intent: payload.intent ?? "warm",
-              confidence: 50,
-              tags: payload.tags ?? [],
-              nextFollowUpAt: null,
-              responseSpeedMins: 0,
-              createdAt: now,
-              updatedAt: now,
-            });
-            toast.success(`Lead added: ${payload.name}`);
-            setDialog(null);
-            return { ok: true, eventIds: [] };
-          }} />
-        </DialogContent>
-      </Dialog>
+      {/* Lead from paste — full Quick Add panel (paste into any field auto-fills all 17 columns) */}
+      <QuickAddLeadPanel open={dialog === "lead"} onClose={() => setDialog(null)} />
 
       {/* Quick todo */}
       <Dialog open={dialog === "todo"} onOpenChange={(o) => !o && setDialog(null)}>
