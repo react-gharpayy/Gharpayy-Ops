@@ -58,7 +58,7 @@ export function RolesTab() {
       email: u.email || "",
       phone: u.phone || "",
       role: u.role || fallbackRole,
-      zones: Array.isArray(u.zones) ? u.zones : [],
+      zones: Array.isArray(u.zones) && u.zones.length > 0 ? [u.zones[0]] : [],
     });
   };
 
