@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import { api, type ManagedUser, type Zone } from "@/lib/api/client";
 
-type RoleTab = "managers" | "admins" | "members";
+type RoleTab = "managers" | "admins" | "members" | "owners";
 type EditForm = { fullName: string; email: string; phone: string; role: string; zones: string[] };
 
 const isVisible = (u: ManagedUser) => {
@@ -23,6 +23,7 @@ export function RolesTab() {
   const [managers, setManagers] = useState<(ManagedUser & { admins?: ManagedUser[] })[]>([]);
   const [admins, setAdmins] = useState<ManagedUser[]>([]);
   const [members, setMembers] = useState<ManagedUser[]>([]);
+  const [owners, setOwners] = useState<ManagedUser[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -33,15 +34,17 @@ export function RolesTab() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [m, a, mem, z] = await Promise.all([
+      const [m, a, mem, own, z] = await Promise.all([
         api.managers.list(),
         api.admins.list(),
         api.members.list(),
+        api.owners.list().catch(() => [] as ManagedUser[]),
         api.zones.list().catch(() => [] as Zone[]),
       ]);
       setManagers((m || []).filter(isVisible));
       setAdmins((a || []).filter(isVisible));
       setMembers((mem || []).filter(isVisible));
+      setOwners((own || []).filter(isVisible));
       setZones(z || []);
     } catch (e) {
       toast.error((e as Error).message);
@@ -103,7 +106,7 @@ export function RolesTab() {
     <div className="space-y-4">
       {/* Role sub-tabs */}
       <div className="flex gap-1 bg-secondary/50 rounded-lg p-1 w-fit">
-        {(["managers", "admins", "members"] as const).map((t) => (
+        {(["managers", "admins", "members", "owners"] as const).map((t) => (
           <button
             key={t}
             onClick={() => { setRoleTab(t); setExpandedId(null); setEditingId(null); }}
