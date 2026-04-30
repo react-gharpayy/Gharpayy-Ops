@@ -339,23 +339,18 @@ function EditForm({
 
       {(form.role === "admin" || form.role === "member") && zones.length > 0 && (
         <div className="space-y-2">
-          <Label className="text-xs flex items-center gap-1.5"><MapPin size={12} /> Zones</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {zones.map((z) => (
-              <label key={z.id} className="flex items-center gap-2 text-xs cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.zones.includes(z.name)}
-                  onChange={(e) => {
-                    if (e.target.checked) setForm({ ...form, zones: [...form.zones, z.name] });
-                    else setForm({ ...form, zones: form.zones.filter((x) => x !== z.name) });
-                  }}
-                  className="rounded"
-                />
-                {z.name}
-              </label>
-            ))}
-          </div>
+          <Label className="text-xs flex items-center gap-1.5"><MapPin size={12} /> Zone</Label>
+          <Select
+            value={form.zones[0] ?? ""}
+            onValueChange={(v) => setForm({ ...form, zones: v ? [v] : [] })}
+          >
+            <SelectTrigger className="text-xs"><SelectValue placeholder="Select zone…" /></SelectTrigger>
+            <SelectContent>
+              {zones.map((z) => (
+                <SelectItem key={z.id} value={z.name}>{z.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
