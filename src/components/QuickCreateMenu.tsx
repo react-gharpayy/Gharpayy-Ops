@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Target, ListTodo, Activity as ActivityIcon, CalendarPlus, FileText, MessageSquare } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { QuickAddLeadPanel } from "@/components/leads/QuickAddLeadPanel";
+import { LeadPasteParser } from "@/components/leads/LeadPasteParser";
 import { useTodos } from "@/hooks/useTodos";
 import { toast } from "sonner";
 
@@ -74,8 +74,13 @@ export function QuickCreateMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Lead from paste — full Quick Add panel (paste into any field auto-fills all 17 columns) */}
-      <QuickAddLeadPanel open={dialog === "lead"} onClose={() => setDialog(null)} />
+      {/* Lead from paste — paste box first, then full Quick Add field set for review */}
+      <Dialog open={dialog === "lead"} onOpenChange={(o) => !o && setDialog(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Paste a lead — auto-extract every field</DialogTitle></DialogHeader>
+          <LeadPasteParser onDone={() => setDialog(null)} />
+        </DialogContent>
+      </Dialog>
 
       {/* Quick todo */}
       <Dialog open={dialog === "todo"} onOpenChange={(o) => !o && setDialog(null)}>
