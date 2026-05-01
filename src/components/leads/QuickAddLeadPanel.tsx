@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { useIdentityStore } from "@/lib/lead-identity/store";
 import { detectZone, parseLead } from "@/lib/lead-identity/parser";
 import { useOrgMembers, useOrgZones } from "@/hooks/useOrgDirectory";
+import { dispatch } from "@/lib/api/command-bus";
 import { toast } from "sonner";
 import { Save, Repeat2, Phone, MapPin, Sparkles, X, CalendarPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
