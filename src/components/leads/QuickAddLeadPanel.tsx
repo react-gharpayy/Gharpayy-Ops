@@ -160,8 +160,25 @@ export function QuickAddLeadPanel({ open, onClose }: Props) {
   };
 
   const save = (keepOpen: boolean) => {
-    if (!name.trim() || !phone.replace(/\D/g, "").match(/^[6-9]\d{9}$/)) {
-      toast.error("Need a name and a valid 10-digit phone");
+    const phoneClean = phone.replace(/\D/g, "");
+    const missing: string[] = [];
+    if (!name.trim()) missing.push("Name");
+    if (!phoneClean.match(/^[6-9]\d{9}$/)) missing.push("Valid 10-digit phone");
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) missing.push("Email");
+    if (!areasText.trim()) missing.push("Areas");
+    if (!fullAddress.trim()) missing.push("Full address");
+    if (!budget.trim()) missing.push("Budget");
+    if (!moveIn) missing.push("Move-in date");
+    if (!type) missing.push("Type");
+    if (!room) missing.push("Room");
+    if (!need) missing.push("Need");
+    if (inBLR === null) missing.push("In Bangalore?");
+    if (!quality) missing.push("Lead Quality");
+    if (!zoneBucket) missing.push("Zone");
+    if (!assigneeId) missing.push("Assigned member");
+    if (!stage) missing.push("Lead stage");
+    if (missing.length) {
+      toast.error(`Fill all required fields: ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""}`);
       return;
     }
     const dup = checkDup({ name, phone, email, location: areasText });
@@ -175,7 +192,7 @@ export function QuickAddLeadPanel({ open, onClose }: Props) {
       return;
     }
     const areasArr = areasText.split(",").map((a) => a.trim()).filter(Boolean);
-    const assignee = teamMembers.find((m) => m.id === assigneeId);
+    const assignee = orgMembers.find((m) => m.id === assigneeId);
     const lead = create(
       {
         name: name.trim(),
