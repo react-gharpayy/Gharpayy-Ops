@@ -11,9 +11,10 @@ import { useNavigate } from '@/shims/react-router-dom';
 import { RequestAccessSheet } from '@/components/leads/RequestAccessSheet';
 import { useIdentityStore } from '@/lib/lead-identity/store';
 import { QuickAddLeadPanel } from '@/components/leads/QuickAddLeadPanel';
+import { useLiveLeads } from '@/hooks/useLiveLeads';
 
 export default function MYTLeadTracker() {
-  const { leads, setLeads, currentMemberId } = useAppState();
+  const { setLeads } = useAppState();
   const navigate = useNavigate();
   const [mode, setMode] = useState<'quick' | 'manual' | 'requests'>('quick');
   const identityLeadCount = useIdentityStore((s) => s.leads.length);
@@ -24,12 +25,11 @@ export default function MYTLeadTracker() {
     moveInDate: '', dateConfirmed: false,
   });
 
-  const myLeads = currentMemberId
-    ? leads.filter(l => l.addedBy === currentMemberId)
-    : leads;
-
-  const qualified = myLeads.filter(l => l.mytQualified);
-  const unqualified = myLeads.filter(l => !l.mytQualified);
+  // Live leads from backend (role-filtered server-side).
+  const { leads: liveLeads, loading: liveLoading } = useLiveLeads();
+  // A "qualified" live lead = budget >= 7000, in a covered zone, has move-in date.
+  const qualified = liveLeads.filter((l) => l.budget >= 7000 && l.moveInDate && zones.some((z) => z.area.toLowerCase() === (l.preferredArea ?? '').toLowerCase()));
+  const unqualified = liveLeads.filter((l) => !qualified.includes(l));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
