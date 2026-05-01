@@ -30,11 +30,7 @@ Move in: 30/04/2026
 Working professional, private room, boys
 Currently in Bangalore`;
 
-const ZONE_BUCKETS = [
-  "CENTRAL STUDENTS", "CU YPR / STUDENTS / WORKING", "HOMES KORA", "HOMES MWB",
-  "KORA CORE", "MTECH HUB", "MWB MORE", "OTHERS COLLEGE STUDENTS",
-  "YPR MAJOR MAIN", "OTHERS",
-] as const;
+// Zone bucket options come from the org's real zones (live from /api/zones).
 
 const STAGES = [
   "MYT [TENANT]",
