@@ -397,27 +397,29 @@ export function QuickAddLeadPanel({ open, onClose }: Props) {
             />
           </Field>
 
-          {/* Zone bucket */}
+          {/* Zone */}
           <Field label="Zone *">
             <select
               value={zoneBucket}
               onChange={(e) => setZoneBucket(e.target.value)}
               className="w-full h-9 bg-background border border-border rounded-md px-2 text-xs"
             >
-              <option value="">Select zone bucket…</option>
-              {ZONE_BUCKETS.map((z) => <option key={z} value={z}>{z}</option>)}
+              <option value="">{orgZones.length ? "Select zone…" : "No zones configured"}</option>
+              {orgZones.map((z) => <option key={z.id} value={z.name}>{z.name}</option>)}
             </select>
           </Field>
 
           {/* Assignee */}
-          <Field label="Assign Member">
+          <Field label="Assign Member *">
             <select
               value={assigneeId}
               onChange={(e) => setAssigneeId(e.target.value)}
               className="w-full h-9 bg-background border border-border rounded-md px-2 text-xs"
             >
-              <option value="">Unassigned</option>
-              {teamMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              <option value="">{orgMembers.length ? "Select member…" : "No members yet"}</option>
+              {orgMembers.map((m) => (
+                <option key={m.id} value={m.id}>{m.name} · {m.role}</option>
+              ))}
             </select>
           </Field>
 
