@@ -159,6 +159,7 @@ function DrawerInner({ lead, currentUserId, assignees }: { lead: Lead; currentUs
       <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0">
         <TabsList className="rounded-none border-b w-full justify-start overflow-x-auto h-auto px-3">
           <TabsTrigger value="activity" className="gap-1.5"><ActivityIcon className="h-3.5 w-3.5" />Activity <Badge variant="secondary" className="ml-1 text-[10px]">{activities.length}</Badge></TabsTrigger>
+          <TabsTrigger value="diagnosis" className="gap-1.5"><Target className="h-3.5 w-3.5" />Diagnosis {(!lead.onePointDiscovered || (lead.onePointConfidence ?? 0) < 3) && <AlertTriangle className="h-3 w-3 text-amber-500" />}</TabsTrigger>
           <TabsTrigger value="details" className="gap-1.5"><Info className="h-3.5 w-3.5" />Details</TabsTrigger>
           <TabsTrigger value="tasks" className="gap-1.5"><ListTodo className="h-3.5 w-3.5" />Tasks</TabsTrigger>
           <TabsTrigger value="notes" className="gap-1.5">Notes {counts.notes > 0 && <Badge variant="secondary" className="ml-1 text-[10px]">{counts.notes}</Badge>}</TabsTrigger>
