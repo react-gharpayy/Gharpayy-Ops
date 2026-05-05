@@ -12,7 +12,6 @@ import { AppProvider as MYTAppProvider } from "@/myt/lib/app-context";
 import { SettingsProvider as MYTSettingsProvider } from "@/myt/lib/settings-context";
 import { TourDataProvider as MYTTourDataProvider } from "@/myt/lib/tour-data-context";
 import { OwnerProvider } from "@/owner/owner-context";
-import { OnboardingWalkthrough } from "@/components/OnboardingWalkthrough";
 import { AuthGate } from "@/components/AuthGate";
 
 import appCss from "../styles.css?url";
@@ -89,7 +88,6 @@ function RootComponent() {
                 <Outlet />
                 <KeyboardShortcuts />
                 <OnboardingWalkthrough />
-              </AuthGate>
               <Toaster />
             </OwnerProvider>
           </MYTAppProvider>
