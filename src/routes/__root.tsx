@@ -87,7 +87,7 @@ function RootComponent() {
               <AuthGate>
                 <Outlet />
                 <KeyboardShortcuts />
-                <OnboardingWalkthrough />
+              </AuthGate>
               <Toaster />
             </OwnerProvider>
           </MYTAppProvider>
