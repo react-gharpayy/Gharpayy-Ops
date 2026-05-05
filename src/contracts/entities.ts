@@ -45,6 +45,12 @@ export const Lead = z.object({
   zoneCategory: z.string().max(80).default(""), // bucket label
   assigneeId: z.string().nullable().default(null), // mirror of assignedTcmId for UI
   stageLabel: z.string().max(120).default(""),  // long stage label e.g. "MYT [TENANT]"
+  // ---- One-Point Diagnosis (Gharpayy Expert discipline) ----
+  // Forces the Expert to articulate the lead's single biggest blocker.
+  // Manager dashboard flags low confidence; "booked" stage is gated on resolution.
+  onePointDiscovered: z.string().max(500).default(""),
+  onePointConfidence: z.number().int().min(0).max(5).default(0), // 0 = unset, 1-5 scale
+  onePointResolved: z.enum(["yes", "no", "partial"]).nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
   // Audit
