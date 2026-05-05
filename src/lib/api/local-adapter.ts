@@ -199,6 +199,9 @@ export const localAdapter = {
           zoneCategory: (p.zoneCategory as string) ?? "",
           assigneeId: (p.assigneeId as string | null) ?? null,
           stageLabel: (p.stageLabel as string) ?? "",
+          onePointDiscovered: (p.onePointDiscovered as string) ?? "",
+          onePointConfidence: (p.onePointConfidence as number) ?? 0,
+          onePointResolved: (p.onePointResolved as Lead["onePointResolved"]) ?? null,
           createdAt: nowISO(), updatedAt: nowISO(),
           createdBy: USER, tenantId: TENANT,
         };
