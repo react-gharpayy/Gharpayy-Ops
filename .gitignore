@@ -34,3 +34,6 @@ dist-ssr
 
 # Legacy CRM reference (local only — do not commit)
 gharpayy_dashboard/
+
+# Local test scripts
+server/src/scripts/
