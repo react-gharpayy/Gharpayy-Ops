@@ -74,6 +74,7 @@ export function LeadPasteParser({ onDone }: Props) {
 
   const [raw, setRaw] = useState("");
   const [parsedOnce, setParsedOnce] = useState(false);
+  const [lastParsedConfidence, setLastParsedConfidence] = useState<Record<string, number>>({});
 
   // Quick-Add field state (same as QuickAddLeadPanel)
   const [name, setName] = useState("");
@@ -109,6 +110,8 @@ export function LeadPasteParser({ onDone }: Props) {
     if (!raw || raw.length < 10) { setParsedOnce(false); return; }
     const parsed = parseLead(raw);
     if (!parsed) return;
+    // Track confidence scores for UI indicators
+    setLastParsedConfidence(parsed.confidence ?? {});
     applyParsed(parsed);
     setParsedOnce(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,6 +127,7 @@ export function LeadPasteParser({ onDone }: Props) {
     if (p.budget) setBudget(p.budget);
     if (p.moveIn && /^\d{4}-\d{2}-\d{2}$/.test(p.moveIn)) setMoveIn(p.moveIn);
     if (p.type) setType(p.type);
+    if (p.quality) setQuality(p.quality);
     if (p.room) setRoom(p.room);
     if (p.need) setNeed(p.need.split(" / ")[0] ?? p.need);
     if (p.specialReqs) setSpecialReqs(p.specialReqs);
@@ -132,6 +136,7 @@ export function LeadPasteParser({ onDone }: Props) {
 
   const reset = () => {
     setRaw(""); setParsedOnce(false);
+    setLastParsedConfidence({});
     setName(""); setPhone(""); setEmail("");
     setAreasText(""); setFullAddress("");
     setBudget(""); setMoveIn(todayIso());
@@ -319,7 +324,20 @@ export function LeadPasteParser({ onDone }: Props) {
 
         <div className="grid grid-cols-2 gap-2">
           <Field label="👤 Name *">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Rahul Sharma" />
+            <div className="relative">
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Rahul Sharma" />
+              {parsedOnce && lastParsedConfidence.name && (
+                <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                  {lastParsedConfidence.name >= 0.8 ? (
+                    <Badge className="text-[9px] bg-green-500">✓ High</Badge>
+                  ) : lastParsedConfidence.name >= 0.6 ? (
+                    <Badge variant="secondary" className="text-[9px]">~ Medium</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[9px]">? Low</Badge>
+                  )}
+                </div>
+              )}
+            </div>
           </Field>
           <Field label="📱 Phone *">
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="98xxxxxxxx" inputMode="tel"

@@ -33,4 +33,5 @@ dist-ssr
 *.sw?
 
 # Legacy CRM reference (local only — do not commit)
-gharpayy_dashboard/
+Gharpayy-Dashboard/
+gharpayy-dashboard/

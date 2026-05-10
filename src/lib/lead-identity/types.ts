@@ -143,6 +143,16 @@ export interface ParsedLeadDraft {
   inBLR: boolean | null;
   zone: string;
   rawSource: string;
+  /** Confidence scores (0-1) for critical fields during parsing. */
+  confidence?: {
+    name: number;
+    phone: number;
+    email: number;
+    location: number;
+    budget: number;
+  };
+  /** Suggested lead quality computed heuristically during parsing. */
+  quality?: "hot" | "good" | "bad" | null;
 }
 
 export interface LeadGeoIntel {

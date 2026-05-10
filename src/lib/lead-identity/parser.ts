@@ -7,6 +7,14 @@
 // exports, JSON dumps, or certain copy-paste paths. Also cuts each labeled
 // field at the *next* label keyword (Phone:, Budget:, Move in:, etc.) so
 // fields don't bleed into each other when pastes arrive on one physical line.
+//
+// IMPROVEMENTS from old CRM parser:
+// - Support key-value format detection (Name: X, Phone: Y, etc.)
+// - Support Indic scripts (Hindi/Devanagari names)
+// - WhatsApp forward header cleanup
+// - Confidence scores for each field
+// - Better name extraction with multiple fallbacks
+// - Inline name+phone pattern detection
 import type { ParsedLeadDraft } from "./types";
 
 interface ZoneDef {
@@ -41,6 +49,7 @@ const ZONES: ZoneDef[] = [
       "marathahalli","marathalli","mahadevapura","mahadevpura","bagmane","brigade tech",
       "kadubeesanahalli","kadubeesana","spice garden","phoenix market city","brigade metropolis",
       "rmz infinity","prestige shantiniketan","whitefield metro","aecs layout","aecs",
+      "rmz","ecoworld","ecoworld park","rmz ecoworld",
     ],
   },
   {
@@ -85,6 +94,20 @@ const EMOJI_RE = /[📝📱✉️📍💰📆📅👨🏢👫✨💥💯⚡🔥�
 
 const NULL_WORD_RE = /\b(?:name|form|full|thank\s*you|thanks|gharpayy|gharpayy\.com|your\s+superstay\s+awaits|best\s+pg\s+in\s+10\s+minutes|18\s*sec|aayushi\s+from\s+gharpayy|not\s+filled)\b/gi;
 const LINK_RE = /(?:https?:\/\/|www\.)\S+|\b(?:maps\.app\.goo\.gl|goo\.gl|bit\.ly)\/\S+/gi;
+
+// WhatsApp forwarded message header pattern: "[1:04 PM, 26/6/2025]" or "[1:05 PM, 26/6/2025]"
+const WA_FORWARD_RE = /^\[?\d{1,2}[/:]\d{2}\s*(?:AM|PM|am|pm)?,?\s*\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\]?\s*[-–—]?\s*/gm;
+
+// Key-value pattern for structured form submissions like "Name: Value"
+// Allow 'Name:' to appear anywhere on a physical line (not only at line start)
+const KV_NAME_RE = /Name\s*[:=\-–]+\s*([^\n]+)/im;
+const KV_PHONE_RE = /(?:^|\n)\s*(?:Phone|Mobile|Ph|Contact|Number|Mob)\s*[:=\-–]+\s*(.+?)(?=\n|Email|Name|Budget|Location|$)/im;
+const KV_EMAIL_RE = /(?:^|\n)\s*(?:Email|E-?mail|Mail)\s*[:=\-–]+\s*(.+?)(?=\n|Phone|Budget|Location|$)/im;
+const KV_BUDGET_RE = /(?:^|\n)\s*(?:Budget|Price|Actual\s+budget)\s*[:=\-–(]+\s*(.+?)(?=\n|Location|Room|Move|$)/im;
+const KV_LOCATION_RE = /(?:^|\n)\s*(?:Location|Preferred\s+Location|Area|Landmark)\s*[:=\-–]+\s*(.+?)(?=\n|Budget|Move|Room|$)/im;
+
+// Hindi/Devanagari script name detection
+const INDIC_NAME_RE = /[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]+(?:\s+[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]+)*/;
 
 const LOCATION_HINTS = [
   ...ZONES.flatMap((z) => z.keywords),
@@ -203,8 +226,10 @@ function titleCase(name: string): string {
 export function parseLead(raw: string): ParsedLeadDraft | null {
   if (!raw || raw.trim().length < 4) return null;
 
-  // Normalise escape sequences and CRLF up front
-  const normalised = normalisePaste(raw);
+  // Step 0: Pre-process - clean WhatsApp forward headers and normalise escape sequences
+  let normalised = normalisePaste(raw);
+  normalised = normalised.replace(WA_FORWARD_RE, ''); // Remove "[HH:MM AM/PM, DD/MM/YYYY]" patterns
+  
   const links = extractLinks(normalised);
   const clean = normalised
     .replace(/\*{1,2}([^*\n]+)\*{1,2}/g, "$1")
@@ -247,31 +272,100 @@ export function parseLead(raw: string): ParsedLeadDraft | null {
   const email = emailMatch?.[0] ?? "";
 
   // ---------- Name ----------
-  let name = grab(
-    /(?:^|\n)\s*Name\s*[:\-–*]+\s*([^\n,📱\d]{2,60})/im,
-    /(?:^|\n)\s*\.Name\s+([^\n.]{2,60})/im,
-    /(?:^|\n)\s*[-–]\s*([A-Z][a-z][^\n\d]{1,40})\s*\n/m,
-  );
-  // Defensive: name may still contain trailing label fragments after newline
-  // collapse — strip up to first digit / @ / known label.
-  if (name) {
-    name = name
+  // Multi-tier fallback: key-value → emoji-labeled → inline → Indic script → capitalized words
+  let name = "";
+  let nameConfidence = 0;
+
+  // Tier 1: Key-value format like "Name: Xxx" (common in form submissions)
+  const kvNameMatch = clean.match(KV_NAME_RE);
+  if (kvNameMatch) {
+    name = kvNameMatch[1]
+      .trim()
       .split(/\s+(?:Phone|Mobile|Email|Location|Budget|Move|Moving|Working|Student|Room|Need)\b/i)[0]
       .replace(/[\d@].*$/, "")
       .replace(/^\W+|\W+$/g, "")
       .trim();
+    if (name && name.length >= 2) {
+      nameConfidence = 0.95;
+    }
   }
 
+  // Tier 2: Try existing emoji-labeled or inline 'Name' patterns anywhere on the line
+  if (!name) {
+    name = grab(
+      /\bName\s*[:\-–*]+\s*([^\n,📱\d]{2,120})/im,
+      /\.Name\s+([^\n.]{2,120})/im,
+      /[-–]\s*([A-Z][a-z][^\n\d]{1,60})/m,
+    );
+    if (name) {
+      name = name
+        .split(/\s+(?:Phone|Mobile|Email|Location|Budget|Move|Moving|Working|Student|Room|Need)\b/i)[0]
+        .replace(/[\d@].*$/, "")
+        .replace(/^\W+|\W+$/g, "")
+        .trim();
+      if (name) nameConfidence = 0.85;
+    }
+  }
+
+  // Tier 3: Try Indic script (Hindi/Devanagari names) - very high confidence if found
+  if (!name) {
+    const indicMatch = clean.match(INDIC_NAME_RE);
+    if (indicMatch && indicMatch[0].length >= 3) {
+      name = indicMatch[0].trim();
+      nameConfidence = 0.8;
+    }
+  }
+
+  // Tier 4: Inline pattern like "Name 9876543210" or "Name email@mail.com"
+  if (!name) {
+    const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+    for (const line of lines.slice(0, 5)) {
+      const stripped = line.replace(EMOJI_RE, "").replace(/^[-–*•]\s*/, "").trim();
+      
+      // Try: "Name 9876543210" or "Name email@domain.com"
+      const inlineMatch = stripped.match(/^([A-Za-z][A-Za-z\s.]{1,40}?)\s+(?:\+?91)?[6-9]\d{9}/);
+      if (inlineMatch) {
+        name = inlineMatch[1].trim();
+        nameConfidence = 0.75;
+        break;
+      }
+    }
+  }
+
+  // Tier 5: Capitalized words in first few lines
   if (!name) {
     const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
     for (const line of lines.slice(0, 3)) {
       const stripped = line.replace(EMOJI_RE, "").replace(/^[-–*•]\s*/, "").trim();
-      const inlineMatch = stripped.match(/^([A-Za-z][A-Za-z\s.]{1,40}?)\s+(?:\+?91)?[6-9]\d{9}/);
-      if (inlineMatch) { name = inlineMatch[1].trim(); break; }
-      if (looksLikeName(stripped)) { name = stripped; break; }
+      if (looksLikeName(stripped)) {
+        name = stripped;
+        nameConfidence = 0.65;
+        break;
+      }
     }
   }
-  if (name) name = titleCase(name);
+
+  // Tier 6: Extract leading capitalized Latin words from cleaned remaining text
+  if (!name) {
+    const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+    const nameWords: string[] = [];
+    for (const word of (lines[0] || "").split(/\s+/).filter(Boolean)) {
+      if (/^[A-Z][a-zA-Z']*$/.test(word) && nameWords.length < 3) {
+        nameWords.push(word);
+      } else if (nameWords.length > 0 || !/^[A-Za-z]{2,}$/.test(word)) {
+        break;
+      }
+    }
+    if (nameWords.length > 0) {
+      name = nameWords.join(" ");
+      nameConfidence = nameWords.every(w => /^[A-Z]/.test(w)) ? 0.7 : 0.5;
+    }
+  }
+
+  // Clean up and title case
+  if (name) {
+    name = titleCase(name);
+  }
 
   // ---------- Location ----------
   let location = grab(
@@ -321,11 +415,18 @@ export function parseLead(raw: string): ParsedLeadDraft | null {
   }
 
   // ---------- Type ----------
-  const isWorking = /\bworking\b|\bprofessional\b|\banalyst\b|\banalysist\b|\bmarketer\b|\bengineer\b|\bdeveloper\b|\bemployee\b/i.test(clean);
-  const isStudent = /\bstudent\b/i.test(clean);
-  const isIntern = /\bintern(?:ing)?\b/i.test(clean);
-  const type = isWorking && isStudent ? "Student/Working"
-    : isWorking ? "Working"
+  // Check both the normalised raw text and the cleaned version for occupation hints,
+  // and handle parenthetical or hyphenated styles like "(Student/Working) - Working".
+  const combinedText = `${normalised} \n ${clean}`;
+  const isWorking = /\b(?:working|professional|analyst|marketer|engineer|developer|employee)\b/i.test(combinedText);
+  const isStudent = /\bstudent\b/i.test(combinedText);
+  const isIntern = /\bintern(?:ing)?\b/i.test(combinedText);
+  // explicit parenthetical patterns
+  const parentheticalWorking = /\(\s*student\s*\/\s*working\s*\)|student\s*\/\s*working/i.test(combinedText);
+  const hyphenWorking = /[-–]\s*working\b/i.test(combinedText);
+  // Prefer mapping combined Student/Working to 'Working' which matches QuickAdd options
+  const type = (isWorking || parentheticalWorking || hyphenWorking) && isStudent ? "Working"
+    : (isWorking || parentheticalWorking || hyphenWorking) ? "Working"
     : isStudent ? "Student"
     : isIntern ? "Intern" : "";
 
@@ -374,9 +475,13 @@ export function parseLead(raw: string): ParsedLeadDraft | null {
 
   const inBLRTrue = /\bin\s*blr\b|in bangalore|currently in bangalore|already here|yes.*blr/i.test(normalised);
   const inBLRFalse = /not in blr|not in bangalore|outside bangalore|relocating|out.*blr/i.test(normalised);
-  const inBLR = inBLRTrue ? true : inBLRFalse ? false : null;
+  let inBLR = inBLRTrue ? true : inBLRFalse ? false : null;
 
   const zone = detectZone(normalised);
+  // If zone detection finds a Bangalore zone, infer inBLR true when explicit phrase missing
+  if (inBLR === null && zone) {
+    inBLR = true;
+  }
 
   // Extract distinct area tokens from the captured location + raw text
   const areaPool = `${location} ${normalised}`.toLowerCase();
@@ -403,6 +508,13 @@ export function parseLead(raw: string): ParsedLeadDraft | null {
   const labeledFull = grab(/Full\s*Address\s*[:\-–]+\s*([^\n]{5,300})/i);
   if (labeledFull) fullAddress = labeledFull;
 
+  // Fallback: if no explicit fullAddress URL/long line found, use the parsed
+  // `location` as the full address so short location-only pastes (e.g. "SG palya")
+  // still populate the Full Address / Map link field in the UI.
+  if (!fullAddress && location) {
+    fullAddress = location;
+  }
+
   const consumedValues = [name, phone, email, location, budget, moveIn, type, room, need, specialReqs, fullAddress, ...links, ...budgets]
     .filter(Boolean)
     .map((v) => String(v).toLowerCase());
@@ -426,11 +538,27 @@ export function parseLead(raw: string): ParsedLeadDraft | null {
 
   if (!phone && !email && !name) return null;
 
+  // Heuristic quality: hot if phone present and move-in is immediate/date; good if phone+budget; else null
+  let quality: "hot" | "good" | "bad" | null = null;
+  const moveImmediate = /\b(immediate|asap|now|today|tomorrow|next\s*(?:week|month)|within\s*\d)\b/i.test(moveIn || "") || /\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?/.test(moveIn || "");
+  if (phone && moveImmediate) quality = "hot";
+  else if (phone && budget) quality = "good";
+  else if (phone) quality = "good";
+
   return {
     name, phone, email, location, areas, fullAddress,
     budget, moveIn,
     type, room, need, specialReqs, extraContent, summary, budgets, links, geoIntel, inBLR, zone,
     rawSource: raw,
+    // Confidence scores for key fields (0-1 scale)
+    confidence: {
+      name: nameConfidence,
+      phone: phone ? 0.95 : 0,
+      email: email ? 0.9 : 0,
+      location: location ? (links.length ? 0.95 : areas.length >= 2 ? 0.85 : 0.7) : 0,
+      budget: budget ? 0.8 : 0,
+    },
+    quality,
   };
 }
 
