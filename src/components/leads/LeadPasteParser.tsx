@@ -125,7 +125,11 @@ export function LeadPasteParser({ onDone }: Props) {
     else if (p.location) setAreasText(p.location);
     if (p.fullAddress) setFullAddress(p.fullAddress);
     if (p.budget) setBudget(p.budget);
-    if (p.moveIn && /^\d{4}-\d{2}-\d{2}$/.test(p.moveIn)) setMoveIn(p.moveIn);
+    // Accept moveIn if it's ISO format OR any non-empty string (parser tries to convert human dates)
+    if (p.moveIn) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(p.moveIn)) setMoveIn(p.moveIn);
+      else if (p.moveIn.trim().length > 0) setMoveIn(p.moveIn); // Fallback for unparseable dates
+    }
     if (p.type) setType(p.type);
     if (p.quality) setQuality(p.quality);
     if (p.room) setRoom(p.room);

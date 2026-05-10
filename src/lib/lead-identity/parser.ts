@@ -223,6 +223,83 @@ function titleCase(name: string): string {
     .join(" ");
 }
 
+/** Parse human-readable date strings to ISO format (YYYY-MM-DD).
+ * Handles: "7th May", "May 7", "07/05", "immediate", "today", etc.
+ */
+function parseHumanDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const t = dateStr.trim().toLowerCase();
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  const pad2 = (n: number): string => String(n).padStart(2, "0");
+  const localIso = (d: Date): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const ymd = (year: number, month: number, day: number): string => {
+    if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+    const check = new Date(year, month - 1, day);
+    if (check.getFullYear() !== year || check.getMonth() !== month - 1 || check.getDate() !== day) return "";
+    return `${year}-${pad2(month)}-${pad2(day)}`;
+  };
+  
+  // Immediate-like dates
+  if (/^(immediate|asap|now)$/i.test(t)) return localIso(now);
+  if (/^today$/i.test(t)) return localIso(now);
+  if (/^tomorrow$/i.test(t)) {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return localIso(d);
+  }
+  
+  // Month names map
+  const months: Record<string, number> = {
+    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+    jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  };
+  
+  // Pattern: "7th May", "7 May", "7march", "May 7", or "May 7th"
+  let match = t.match(/^(\d{1,2})(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const monthStr = match[2].toLowerCase();
+    const monthNum = months[monthStr.slice(0, 3)];
+    if (monthNum) {
+      return ymd(currentYear, monthNum, day);
+    }
+  }
+  
+  // Pattern: "May 7" or "May 7th"
+  match = t.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?/i);
+  if (match) {
+    const monthStr = match[1].toLowerCase();
+    const monthNum = months[monthStr.slice(0, 3)];
+    const day = parseInt(match[2], 10);
+    if (monthNum) {
+      return ymd(currentYear, monthNum, day);
+    }
+  }
+  
+  // Pattern: "07/05" or "07-05" or "07.05" (assume DD/MM)
+  match = t.match(/^(\d{1,2})[\/\-.]+(\d{1,2})$/);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    return ymd(currentYear, month, day);
+  }
+  
+  // Pattern: "07/05/2026" or "07-05-2026"
+  match = t.match(/^(\d{1,2})[\/\-.]+(\d{1,2})[\/\-.]+(\d{4})$/);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const year = parseInt(match[3], 10);
+    return ymd(year, month, day);
+  }
+  
+  // If it doesn't match any pattern, return empty (will fall back to today in UI)
+  return "";
+}
+
 export function parseLead(raw: string): ParsedLeadDraft | null {
   if (!raw || raw.trim().length < 4) return null;
 
@@ -545,9 +622,12 @@ export function parseLead(raw: string): ParsedLeadDraft | null {
   else if (phone && budget) quality = "good";
   else if (phone) quality = "good";
 
+  // Convert human-readable move-in dates (e.g., "7th May") to ISO format (e.g., "2026-05-07")
+  const moveInIso = moveIn ? parseHumanDate(moveIn) : "";
+
   return {
     name, phone, email, location, areas, fullAddress,
-    budget, moveIn,
+    budget, moveIn: moveInIso || moveIn,
     type, room, need, specialReqs, extraContent, summary, budgets, links, geoIntel, inBLR, zone,
     rawSource: raw,
     // Confidence scores for key fields (0-1 scale)
