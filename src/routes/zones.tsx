@@ -16,7 +16,7 @@ function ZonesRoute() {
 
   useEffect(() => { if (!user) hydrate(); }, [user, hydrate]);
   useEffect(() => {
-    if (user && user.role !== "super_admin") {
+    if (user && user.role !== "super_admin" && user.role !== "manager") {
       navigate({ to: "/" });
     }
   }, [user, navigate]);
