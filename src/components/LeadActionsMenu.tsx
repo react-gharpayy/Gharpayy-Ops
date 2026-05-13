@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { MessageCircle, Phone, CalendarPlus, BellRing, MoreVertical, ExternalLink, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Lead } from '@/lib/types';
+import { formatTime12h } from '@/lib/utils';
 
 interface Props {
   lead: Lead;
@@ -61,7 +62,7 @@ export function LeadActionsMenu({ lead, size = 'sm' }: Props) {
               tourId: tour.id, leadName: lead.name, phone: lead.phone,
               propertyName: property.name, area: property.area,
               tourDate: tour.scheduledAt.slice(0, 10),
-              tourTime: tour.scheduledAt.slice(11, 16),
+              tourTime: formatTime12h(tour.scheduledAt.slice(11, 16)),
               tcmName: tcm?.name,
             });
             toast.success('WhatsApp confirmation opened');
@@ -77,7 +78,7 @@ export function LeadActionsMenu({ lead, size = 'sm' }: Props) {
               tourId: tour.id, leadName: lead.name, phone: lead.phone,
               propertyName: property.name, area: property.area,
               tourDate: tour.scheduledAt.slice(0, 10),
-              tourTime: tour.scheduledAt.slice(11, 16),
+              tourTime: formatTime12h(tour.scheduledAt.slice(11, 16)),
               tcmName: tcm?.name,
             });
             toast.success('2h reminder opened');

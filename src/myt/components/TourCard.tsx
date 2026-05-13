@@ -3,7 +3,7 @@ import { ConfidenceBar } from './ConfidenceBar';
 import { StatusBadge } from './StatusBadge';
 import { Phone, Video, Building2, MapPin, Wallet, Calendar, Briefcase, Flame, Package, IndianRupee, Sparkles } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { cn } from '@/lib/utils';
+import { cn, formatTime12h } from '@/lib/utils';
 import { intentBg, confirmationLabel } from '@/myt/lib/confidence';
 import { useState } from 'react';
 import { Textarea } from "@/components/ui/textarea";
@@ -64,7 +64,7 @@ export function TourCard({ tour: t, onUpdate, variant = 'full' }: Props) {
           <div className="text-[10px] text-muted-foreground">{tourTypeLabel[t.tourType]}</div>
           <div className="flex items-center gap-1 justify-end text-foreground text-xs font-medium mt-0.5">
             {tourTypeIcon(t.tourType)}
-            <span>{t.tourTime}</span>
+            <span>{formatTime12h(t.tourTime)}</span>
           </div>
         </div>
       </div>
@@ -165,7 +165,7 @@ export function TourCard({ tour: t, onUpdate, variant = 'full' }: Props) {
           label="Pack"
           onClick={() => {
             const msg = encodeURIComponent(
-              `Hi ${t.leadName}, here's your pre-tour pack for ${t.propertyName}:\n\n📸 Photos: gharpayy.com/p/${t.propertyId ?? 'demo'}\n🍽 Today's menu: gharpayy.com/menu\n🛡 Safety video: gharpayy.com/safety\n\nSee you at ${t.tourTime}!`
+              `Hi ${t.leadName}, here's your pre-tour pack for ${t.propertyName}:\n\n📸 Photos: gharpayy.com/p/${t.propertyId ?? 'demo'}\n🍽 Today's menu: gharpayy.com/menu\n🛡 Safety video: gharpayy.com/safety\n\nSee you at ${formatTime12h(t.tourTime)}!`
             );
             window.open(`https://wa.me/${t.phone.replace(/[^\d]/g, '')}?text=${msg}`, '_blank');
             toast.success('Content pack ready');

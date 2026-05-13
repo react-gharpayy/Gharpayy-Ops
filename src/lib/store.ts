@@ -6,11 +6,12 @@ import type {
 } from "./types";
 import { ACTIVITIES, FOLLOWUPS, PROPERTIES, TCMS, TOURS, HANDOFFS, SEQUENCES_INIT } from "./mock-data";
 import { autoAssign as autoAssignFn } from "./routing";
+import { api } from "@/lib/api/client";
 import { pushObjectionToOwner, pushTourViewToOwner } from "@/owner/team-bridge";
 import { emit as emitConnector } from "./connectors";
 import { personName } from "./people";
 
-const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
+const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 14)}`;
 
 interface AppState {
   role: Role;
@@ -41,13 +42,14 @@ interface AppState {
   reassignLead: (leadId: string, tcmId: string, reason: string) => void;
   autoAssignLead: (leadId: string) => { tcmId: string; reasons: string[] };
 
-  scheduleTour: (input: { leadId: string; propertyId?: string; tcmId: string; scheduledAt: string }) => Tour;
-  cancelTour: (tourId: string) => void;
-  rescheduleTour: (tourId: string, scheduledAt: string) => void;
-  completeTour: (tourId: string) => void;
+  scheduleTour: (input: { leadId: string; propertyId?: string; tcmId: string; scheduledAt: string }) => Promise<Tour>;
+  cancelTour: (tourId: string) => Promise<void>;
+  rescheduleTour: (tourId: string, scheduledAt: string) => Promise<void>;
+  completeTour: (tourId: string) => Promise<void>;
+  updateTourDetails: (tourId: string, patch: Partial<Tour>) => Promise<void>;
 
   setDecision: (tourId: string, decision: ClientDecision) => void;
-  updatePostTour: (tourId: string, patch: Partial<PostTourUpdate>) => void;
+  updatePostTour: (tourId: string, patch: Partial<PostTourUpdate>) => Promise<void>;
 
   addNote: (leadId: string, note: string, tourId?: string) => void;
   logCall: (leadId: string) => void;
@@ -140,19 +142,54 @@ export const useApp = create<AppState>((set, get) => ({
     }));
   },
 
-  scheduleTour: ({ leadId, propertyId, tcmId, scheduledAt }) => {
+  scheduleTour: async ({ leadId, propertyId, tcmId, scheduledAt }) => {
     const lead = get().leads.find((l) => l.id === leadId)!;
-    const tour: Tour = {
-      id: uid("t"), leadId, propertyId, tcmId, scheduledAt,
-      status: "scheduled", decision: null,
-      postTour: {
-        outcome: null, confidence: 0, objection: null, objectionNote: "",
-        expectedDecisionAt: null, nextFollowUpAt: null, filledAt: null,
-      },
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    const cmd = {
+      _id: uid("c"),
+      type: "cmd.tour.schedule",
+      issuedAt: new Date().toISOString(),
+      payload: { leadId, propertyId: propertyId ?? null, tcmId, scheduledAt, bookingSource: "whatsapp" },
     };
+    const result = await api.command<Record<string, unknown>>(cmd);
+
+    // The server dispatch returns { ok, eventIds, data: { tour } }.
+    // Handle both direct and nested shapes defensively.
+    const rawResult = result as any;
+    if (rawResult.ok === false) {
+      throw new Error(rawResult.error ?? "Tour scheduling failed on server");
+    }
+    const wireTour = rawResult.data?.tour ?? rawResult.tour;
+    if (!wireTour?._id) {
+      console.error("[store.scheduleTour] Unexpected response shape:", JSON.stringify(result));
+      throw new Error("Server did not return tour data");
+    }
+
+    const tour = {
+      id: wireTour._id,
+      leadId: wireTour.leadId,
+      propertyId: wireTour.propertyId ?? undefined,
+      tcmId: wireTour.assignedTo,
+      scheduledBy: wireTour.scheduledBy,
+      scheduledAt: wireTour.scheduledAt,
+      status: wireTour.status as Tour["status"],
+      decision: null,
+      postTour: {
+        outcome: null,
+        confidence: 0,
+        objection: null,
+        objectionNote: "",
+        expectedDecisionAt: null,
+        nextFollowUpAt: null,
+        filledAt: null,
+      },
+      createdAt: wireTour.createdAt,
+      updatedAt: wireTour.updatedAt,
+    };
+
     set((s) => ({
-      tours: [tour, ...s.tours],
+      tours: s.tours.some((x) => x.id === tour.id)
+        ? s.tours.map((x) => (x.id === tour.id ? { ...x, ...tour } : x))
+        : [tour, ...s.tours],
       leads: s.leads.map((l) =>
         l.id === leadId ? { ...l, stage: "tour-scheduled", updatedAt: new Date().toISOString() } : l,
       ),
@@ -165,7 +202,6 @@ export const useApp = create<AppState>((set, get) => ({
       kind: "message_sent", actor: "system", leadId, tourId: tour.id,
       text: `Auto WhatsApp confirmation sent to ${lead.name}`,
     });
-    // Connector — Flow Ops scheduling earns assist; TCM is primary.
     const actorRole = get().role;
     const actorId = actorRole === "tcm" ? get().currentTcmId : actorRole;
     emitConnector({
@@ -183,7 +219,13 @@ export const useApp = create<AppState>((set, get) => ({
     return tour;
   },
 
-  cancelTour: (tourId) => {
+  cancelTour: async (tourId) => {
+    await api.command({
+      _id: uid("c"),
+      type: "cmd.tour.cancel",
+      issuedAt: new Date().toISOString(),
+      payload: { tourId },
+    });
     const t = get().tours.find((x) => x.id === tourId);
     if (!t) return;
     set((s) => ({
@@ -194,7 +236,13 @@ export const useApp = create<AppState>((set, get) => ({
     pushActivity(set, get, { kind: "tour_cancelled", actor: get().role, leadId: t.leadId, tourId, text: "Tour cancelled" });
   },
 
-  rescheduleTour: (tourId, scheduledAt) => {
+  rescheduleTour: async (tourId, scheduledAt) => {
+    await api.command({
+      _id: uid("c"),
+      type: "cmd.tour.reschedule",
+      issuedAt: new Date().toISOString(),
+      payload: { tourId, scheduledAt },
+    });
     set((s) => ({
       tours: s.tours.map((x) =>
         x.id === tourId ? { ...x, scheduledAt, updatedAt: new Date().toISOString() } : x,
@@ -204,7 +252,13 @@ export const useApp = create<AppState>((set, get) => ({
     if (t) pushActivity(set, get, { kind: "tour_scheduled", actor: get().role, leadId: t.leadId, tourId, text: "Tour rescheduled" });
   },
 
-  completeTour: (tourId) => {
+  completeTour: async (tourId) => {
+    await api.command({
+      _id: uid("c"),
+      type: "cmd.tour.complete",
+      issuedAt: new Date().toISOString(),
+      payload: { tourId },
+    });
     const t = get().tours.find((x) => x.id === tourId);
     if (!t) return;
     set((s) => ({
@@ -216,7 +270,6 @@ export const useApp = create<AppState>((set, get) => ({
       ),
     }));
     pushActivity(set, get, { kind: "tour_completed", actor: t.tcmId, leadId: t.leadId, tourId, text: "Tour marked completed" });
-    // Bridge → owner: every completed tour bumps the room's view counter
     const prop = get().properties.find((p) => p.id === t.propertyId);
     if (prop) pushTourViewToOwner(prop.name);
     const lead = get().leads.find((l) => l.id === t.leadId);
@@ -226,6 +279,18 @@ export const useApp = create<AppState>((set, get) => ({
       leadId: t.leadId, tourId, propertyId: t.propertyId,
       text: `${personName(t.tcmId, "TCM")} completed tour with ${lead?.name ?? "lead"}`,
     });
+  },
+
+  updateTourDetails: async (tourId, patch) => {
+    await api.command({
+      _id: uid("c"),
+      type: "cmd.tour.update",
+      issuedAt: new Date().toISOString(),
+      payload: { tourId, patch },
+    });
+    set((s) => ({
+      tours: s.tours.map((x) => (x.id === tourId ? { ...x, ...patch, updatedAt: new Date().toISOString() } : x)),
+    }));
   },
 
   setDecision: (tourId, decision) => {
@@ -251,7 +316,13 @@ export const useApp = create<AppState>((set, get) => ({
     });
   },
 
-  updatePostTour: (tourId, patch) => {
+  updatePostTour: async (tourId, patch) => {
+    await api.command({
+      _id: uid("c"),
+      type: "cmd.tour.update_post_tour",
+      issuedAt: new Date().toISOString(),
+      payload: { tourId, patch },
+    });
     const t = get().tours.find((x) => x.id === tourId);
     if (!t) return;
     const prevObjection = t.postTour.objection;
@@ -480,7 +551,7 @@ export function getTcm(id: string) {
   return TCMS.find((t) => t.id === id);
 }
 
-export function getProperty(id?: string, properties: Property[]) {
+export function getProperty(id: string | undefined, properties: Property[]) {
   return id ? properties.find((p) => p.id === id) : undefined;
 }
 

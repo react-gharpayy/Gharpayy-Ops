@@ -11,6 +11,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerLeadsRoutes } from "./modules/leads/routes.js";
+import { registerToursRoutes } from "./modules/tours/routes.js";
 import { registerTodosRoutes } from "./modules/todos/routes.js";
 import { registerActivitiesRoutes } from "./modules/activities/routes.js";
 import { registerUserRoutes } from "./modules/users/routes.js";
@@ -40,9 +41,11 @@ async function main() {
   });
   await app.register(cookie);
   await app.register(rateLimit, {
-    max: 300,
+    max: env.NODE_ENV === "development" ? 10000 : 300,
     timeWindow: "1 minute",
-    redis,
+    // Only use Redis store in production — in dev the in-memory store avoids
+    // issues when Redis is not running or the adapter misbehaves.
+    ...(env.NODE_ENV !== "development" ? { redis } : {}),
     keyGenerator: (req) => {
       // Per-user when authenticated, per-IP otherwise. Avoids one user starving
       // a shared NAT.
@@ -74,6 +77,7 @@ h1{margin:0 0 .5rem;font-size:1.5rem;color:#34d399}p{margin:.25rem 0;color:#94a3
   registerAuthRoutes(app);
   registerWebhookRoutes(app);
   registerLeadsRoutes(app);
+  registerToursRoutes(app);
   registerTodosRoutes(app);
   registerActivitiesRoutes(app);
   registerUserRoutes(app);

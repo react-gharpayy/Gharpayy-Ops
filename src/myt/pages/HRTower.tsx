@@ -8,7 +8,7 @@ import { StatusBadge, OutcomeBadge } from '@/myt/components/StatusBadge';
 import { getZonePerformance, filterToursByDateRange } from '@/myt/lib/mock-data';
 import { DateRange } from '@/myt/lib/types';
 import { CalendarCheck, Users, TrendingUp, FileText, AlertTriangle, Building } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatTime12h } from '@/lib/utils';
 import { GlueFeed } from '@/components/GlueFeed';
 import { CoachInline } from '@/components/CoachInline';
 
@@ -158,7 +158,7 @@ export default function HRTower() {
             <div key={t.id} className="bg-surface-2/50 rounded-lg p-3 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="font-medium text-foreground text-sm">{t.leadName}</span>
-                <span className="text-xs text-muted-foreground">{t.tourTime}</span>
+                <span className="text-xs text-muted-foreground">{formatTime12h(t.tourTime)}</span>
               </div>
               <p className="text-xs text-muted-foreground">{t.propertyName} · {t.assignedToName}</p>
               <div className="flex items-center gap-2">
@@ -183,7 +183,7 @@ export default function HRTower() {
             <tbody>
               {filtered.slice(0, 15).map(t => (
                 <tr key={t.id} className="border-b border-border/50 hover:bg-accent/30 transition-colors">
-                  <td className="py-2 text-muted-foreground">{t.tourTime}</td>
+                  <td className="py-2 text-muted-foreground">{formatTime12h(t.tourTime)}</td>
                   <td className="py-2 font-medium text-foreground">{t.leadName}</td>
                   <td className="py-2 text-muted-foreground">{t.propertyName}</td>
                   <td className="py-2 text-muted-foreground">{t.assignedToName}</td>

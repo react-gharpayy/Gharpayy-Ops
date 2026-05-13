@@ -262,19 +262,19 @@ export function notifyTourScheduled(input: {
   recipientIds: Array<{ id: string; name: string }>;
 }) {
   const store = useNotifications.getState();
-  const sharedBody = `${input.senderName} scheduled ${input.leadName}'s tour for you`;
   const recipients = input.recipientIds.filter((r, index, all) => all.findIndex((x) => x.id === r.id) === index);
   recipients.forEach((recipient) => {
+    const isSender = recipient.id === input.senderId;
     store.push({
       id: `n:tour.scheduled:${input.tourId}:${recipient.id}`,
       ts: Date.now(),
       audience: [],
       recipientId: recipient.id,
-      severity: recipient.id === input.senderId ? "success" : "info",
-      title: recipient.id === input.senderId ? "Tour scheduled" : "Tour assigned to you",
-      body: recipient.id === input.senderId
-        ? `You scheduled ${input.leadName}'s tour to ${input.assigneeName?.trim() || "the assigned person"}`
-        : sharedBody,
+      severity: isSender ? "success" : "info",
+      title: isSender ? "Tour scheduled" : "Tour assigned to you",
+      body: isSender
+        ? `You assigned ${input.leadName}'s tour to ${input.assigneeName?.trim() || "the assigned member"}`
+        : `${input.senderName} assigned ${input.leadName}'s tour to you`,
       href: "/inbox",
       kind: "tour.scheduled",
       tourId: input.tourId,

@@ -1,0 +1,219 @@
+import { col } from "../../db/mongo.js";
+import { ulid } from "../../../../src/contracts/ids.js";
+import {
+  ScheduleTourCmd,
+  RescheduleTourCmd,
+  CancelTourCmd,
+  CompleteTourCmd,
+  UpdateTourCmd,
+  UpdatePostTourCmd,
+  type Command,
+} from "../../../../src/contracts/commands.js";
+import { Tour, Lead, PostTourUpdate } from "../../../../src/contracts/entities.js";
+import { emit, newEventId } from "../../realtime/event-bus.js";
+import type { JwtClaims } from "../../auth/auth.js";
+import { autoLogActivity } from "../activities/command-handlers.js";
+
+const TOURS = "tours";
+
+export async function applyTourCommand(cmd: Command, user: JwtClaims) {
+  const now = new Date().toISOString();
+  const correlationId = cmd._id;
+
+  switch (cmd.type) {
+    case "cmd.tour.schedule": {
+      const p = ScheduleTourCmd.parse(cmd).payload;
+      const lead = await col<Lead>("leads").findOne({ _id: p.leadId, tenantId: user.tenantId });
+      if (!lead) {
+        return { ok: false, error: "NOT_FOUND: Lead not found" };
+      }
+
+      const tour: Tour = {
+        _id: ulid(),
+        leadId: p.leadId,
+        propertyId: p.propertyId ?? null,
+        assignedTo: p.tcmId,
+        scheduledBy: user.sub,
+        scheduledAt: p.scheduledAt,
+        status: "scheduled",
+        showUp: null,
+        customPropertyName: "",
+        bookingSource: p.bookingSource ?? "whatsapp",
+        postTour: {
+          outcome: null,
+          confidence: 0,
+          objection: null,
+          objectionNote: "",
+          expectedDecisionAt: null,
+          nextFollowUpAt: null,
+          filledAt: null,
+        },
+        createdAt: now,
+        updatedAt: now,
+        tenantId: user.tenantId,
+      };
+
+      await col<Tour>(TOURS).insertOne(tour);
+      await col<Lead>("leads").updateOne(
+        { _id: p.leadId, tenantId: user.tenantId },
+        { $set: { stage: "tour-scheduled", updatedAt: now } },
+      );
+
+      const evtId = newEventId();
+      await emit({
+        _id: evtId,
+        type: "evt.tour.scheduled",
+        occurredAt: now,
+        actor: user.sub,
+        tenantId: user.tenantId,
+        correlationId,
+        causationId: null,
+        version: 1,
+        payload: { tour },
+      });
+
+      await autoLogActivity({
+        entityType: "lead",
+        entityId: p.leadId,
+        kind: "tour_scheduled",
+        subject: `Tour scheduled`,
+        body: `Tour scheduled for lead ${lead.name}`,
+        meta: { tourId: tour._id, assignedTo: tour.assignedTo },
+        user,
+        correlationId,
+      });
+
+      return { ok: true, eventIds: [evtId], data: { tour } };
+    }
+
+    case "cmd.tour.reschedule": {
+      const p = RescheduleTourCmd.parse(cmd).payload;
+      const tour = await col<Tour>(TOURS).findOneAndUpdate(
+        { _id: p.tourId, tenantId: user.tenantId },
+        { $set: { scheduledAt: p.scheduledAt, updatedAt: now } },
+        { returnDocument: "after" },
+      );
+      if (!tour) return { ok: false, error: "NOT_FOUND: Tour not found" };
+
+      const evtId = newEventId();
+      await emit({
+        _id: evtId,
+        type: "evt.tour.rescheduled",
+        occurredAt: now,
+        actor: user.sub,
+        tenantId: user.tenantId,
+        correlationId,
+        causationId: null,
+        version: 1,
+        payload: { tourId: p.tourId, scheduledAt: p.scheduledAt },
+      });
+      return { ok: true, eventIds: [evtId], data: { tour } };
+    }
+
+    case "cmd.tour.cancel": {
+      const p = CancelTourCmd.parse(cmd).payload;
+      const tour = await col<Tour>(TOURS).findOneAndUpdate(
+        { _id: p.tourId, tenantId: user.tenantId },
+        { $set: { status: "cancelled", updatedAt: now } },
+        { returnDocument: "after" },
+      );
+      if (!tour) return { ok: false, error: "NOT_FOUND: Tour not found" };
+
+      const evtId = newEventId();
+      await emit({
+        _id: evtId,
+        type: "evt.tour.cancelled",
+        occurredAt: now,
+        actor: user.sub,
+        tenantId: user.tenantId,
+        correlationId,
+        causationId: null,
+        version: 1,
+        payload: { tourId: p.tourId },
+      });
+      return { ok: true, eventIds: [evtId], data: { tour } };
+    }
+
+    case "cmd.tour.complete": {
+      const p = CompleteTourCmd.parse(cmd).payload;
+      const tour = await col<Tour>(TOURS).findOneAndUpdate(
+        { _id: p.tourId, tenantId: user.tenantId },
+        { $set: { status: "completed", updatedAt: now } },
+        { returnDocument: "after" },
+      );
+      if (!tour) return { ok: false, error: "NOT_FOUND: Tour not found" };
+
+      await col<Lead>("leads").updateOne(
+        { _id: tour.leadId, tenantId: user.tenantId },
+        { $set: { stage: "tour-done", updatedAt: now } },
+      );
+
+      const evtId = newEventId();
+      await emit({
+        _id: evtId,
+        type: "evt.tour.completed",
+        occurredAt: now,
+        actor: user.sub,
+        tenantId: user.tenantId,
+        correlationId,
+        causationId: null,
+        version: 1,
+        payload: { tourId: p.tourId },
+      });
+      return { ok: true, eventIds: [evtId], data: { tour } };
+    }
+
+    case "cmd.tour.update": {
+      const p = UpdateTourCmd.parse(cmd).payload;
+      if (Object.keys(p.patch).length === 0) return { ok: true };
+
+      const tour = await col<Tour>(TOURS).findOne({ _id: p.tourId, tenantId: user.tenantId });
+      if (!tour) return { ok: false, error: "NOT_FOUND: Tour not found" };
+
+      await col<Tour>(TOURS).updateOne(
+        { _id: p.tourId },
+        { $set: { ...(p.patch as any), updatedAt: now } }
+      );
+
+      await emit({
+        _id: newEventId(),
+        type: "evt.tour.updated",
+        occurredAt: now,
+        actor: user.sub,
+        tenantId: user.tenantId,
+        correlationId,
+        causationId: null,
+        version: 1,
+        payload: { tourId: tour._id, patch: p.patch },
+      });
+      return { ok: true };
+    }
+
+    case "cmd.tour.update_post_tour": {
+      const p = UpdatePostTourCmd.parse(cmd).payload;
+      const tour = await col<Tour>(TOURS).findOne({ _id: p.tourId, tenantId: user.tenantId });
+      if (!tour) return { ok: false, error: "NOT_FOUND: Tour not found" };
+      const updatedPostTour = { ...tour.postTour, ...p.patch } as PostTourUpdate;
+      const updated = await col<Tour>(TOURS).findOneAndUpdate(
+        { _id: p.tourId, tenantId: user.tenantId },
+        { $set: { postTour: updatedPostTour, updatedAt: now } },
+        { returnDocument: "after" },
+      );
+      if (!updated) return { ok: false, error: "NOT_FOUND: Tour not found" };
+      const evtId = newEventId();
+      await emit({
+        _id: evtId,
+        type: "evt.tour.updated",
+        occurredAt: now,
+        actor: user.sub,
+        tenantId: user.tenantId,
+        correlationId,
+        causationId: null,
+        version: 1,
+        payload: { tourId: p.tourId, patch: p.patch },
+      });
+      return { ok: true, eventIds: [evtId], data: { tour: updated } };
+    }
+  }
+  throw Object.assign(new Error(`Unknown command type: ${(cmd as { type: string }).type}`), { code: "BAD_COMMAND" });
+}

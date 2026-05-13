@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Lead, LeadStage, Intent, Todo, TodoEntityType, TodoPriority, Activity, ActivityKind, ActivityEntityType, ActivityDirection, ActivityOutcome } from "./entities.js";
+import { Lead, LeadStage, Intent, Todo, TodoEntityType, TodoPriority, Activity, ActivityKind, ActivityEntityType, ActivityDirection, ActivityOutcome, TourStatus, TourOutcome } from "./entities.js";
 
 // Command registry — every state-changing intent. Validated client + server.
 export const CommandType = z.enum([
@@ -8,6 +8,13 @@ export const CommandType = z.enum([
   "cmd.lead.assign",
   "cmd.lead.change_stage",
   "cmd.lead.delete",
+  // Tours
+  "cmd.tour.schedule",
+  "cmd.tour.reschedule",
+  "cmd.tour.cancel",
+  "cmd.tour.complete",
+  "cmd.tour.update",
+  "cmd.tour.update_post_tour",
   // Todos
   "cmd.todo.create",
   "cmd.todo.update",
@@ -82,6 +89,62 @@ export const ChangeStageCmd = Base.extend({
 export const DeleteLeadCmd = Base.extend({
   type: z.literal("cmd.lead.delete"),
   payload: z.object({ leadId: z.string() }),
+});
+
+// ---------- Tours ----------
+export const ScheduleTourCmd = Base.extend({
+  type: z.literal("cmd.tour.schedule"),
+  payload: z.object({
+    leadId: z.string(),
+    propertyId: z.string().nullable().optional(),
+    tcmId: z.string(),
+    scheduledAt: z.string(),
+    bookingSource: z.string().optional(),
+  }),
+});
+
+export const RescheduleTourCmd = Base.extend({
+  type: z.literal("cmd.tour.reschedule"),
+  payload: z.object({ tourId: z.string(), scheduledAt: z.string() }),
+});
+
+export const CancelTourCmd = Base.extend({
+  type: z.literal("cmd.tour.cancel"),
+  payload: z.object({ tourId: z.string() }),
+});
+
+export const CompleteTourCmd = Base.extend({
+  type: z.literal("cmd.tour.complete"),
+  payload: z.object({ tourId: z.string() }),
+});
+
+export const UpdateTourCmd = Base.extend({
+  type: z.literal("cmd.tour.update"),
+  payload: z.object({
+    tourId: z.string(),
+    patch: z.object({
+      propertyId: z.string().nullable().optional(),
+      customPropertyName: z.string().optional(),
+      status: TourStatus.optional(),
+      showUp: z.boolean().nullable().optional(),
+    }),
+  }),
+});
+
+export const UpdatePostTourCmd = Base.extend({
+  type: z.literal("cmd.tour.update_post_tour"),
+  payload: z.object({
+    tourId: z.string(),
+    patch: z.object({
+      outcome: TourOutcome.optional(),
+      confidence: z.number().int().min(0).max(100).optional(),
+      objection: z.string().nullable().optional(),
+      objectionNote: z.string().optional(),
+      expectedDecisionAt: z.string().nullable().optional(),
+      nextFollowUpAt: z.string().nullable().optional(),
+      filledAt: z.string().nullable().optional(),
+    }),
+  }),
 });
 
 // ---------- Todos ----------
@@ -188,6 +251,12 @@ export const Command = z.discriminatedUnion("type", [
   DeclineTodoCmd,
   CompleteTodoCmd,
   CancelTodoCmd,
+  ScheduleTourCmd,
+  RescheduleTourCmd,
+  CancelTourCmd,
+  CompleteTourCmd,
+  UpdateTourCmd,
+  UpdatePostTourCmd,
   LogActivityCmd,
   UpdateActivityCmd,
   DeleteActivityCmd,

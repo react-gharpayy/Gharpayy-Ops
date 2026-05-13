@@ -42,7 +42,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
   
   // Wrap setTours to also persist to localStorage
-  const setTours = (updater: React.SetStateAction<Tour[]>) => {
+  const setTours = React.useCallback((updater: React.SetStateAction<Tour[]>) => {
     setToursState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       try {
@@ -52,7 +52,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
-  };
+  }, []);
 
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [bookings, setBookings] = useState<Booking[]>(initialBookings);
@@ -66,6 +66,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Fetch real zones from the API on mount and generate rooms/blocks
   useEffect(() => {
+    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/myt")) return;
     void (async () => {
       try {
         const realZones = await api.zones.list();

@@ -81,6 +81,7 @@ export interface Tour {
   leadId: string;
   propertyId?: string;
   tcmId: string;
+  scheduledBy?: string;
   scheduledAt: string;
   status: TourStatus;
   decision: ClientDecision;

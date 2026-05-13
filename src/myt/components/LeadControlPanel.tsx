@@ -16,9 +16,10 @@ import {
 import { Tour, Lead, TourStatus, TourOutcome, WhyLost } from "@/myt/lib/types";
 import { useAppState } from "@/myt/lib/app-context";
 import { useTourData } from "@/myt/lib/tour-data-context";
+import { useOrgMembers } from "@/hooks/useOrgDirectory";
 import { intentBg, confirmationLabel } from "@/myt/lib/confidence";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, formatTime12h } from "@/lib/utils";
 import { format, formatDistanceToNow } from "date-fns";
 
 type Subject =
@@ -46,14 +47,39 @@ const SIGNAL_TAGS = [
 
 export function LeadControlPanel({ subject, trigger, defaultTab = "overview" }: Props) {
   const [open, setOpen] = useState(false);
-  const { setTours, leads, setLeads } = useAppState();
+  const { tours, setTours, leads, setLeads } = useAppState();
+  const { members: orgMembers } = useOrgMembers();
   const { addEvent, eventsForTour, reports, setReport } = useTourData();
 
   // ----- derive lead + tour from subject + global state -----
-  const tour = subject.kind === "tour" ? subject.tour : undefined;
   const lead = subject.kind === "lead"
     ? subject.lead
     : leads.find((l) => l.phone === subject.tour.phone || l.name === subject.tour.leadName);
+
+  const leadTours = useMemo(
+    () => (lead
+      ? tours
+          .filter((candidate) => candidate.phone === lead.phone || candidate.leadName === lead.name)
+          .sort((a, b) => `${b.tourDate}T${b.tourTime}`.localeCompare(`${a.tourDate}T${a.tourTime}`))
+      : []),
+    [lead, tours],
+  );
+
+  const scheduledTourActivity = useMemo(
+    () => (lead ? eventsForTour(leadTours[0]?.id ?? "").find(() => false) : null),
+    [lead, leadTours, eventsForTour],
+  );
+
+  const tour = subject.kind === "tour"
+    ? subject.tour
+    : (scheduledTourActivity?.tourId ? tours.find((candidate) => candidate.id === scheduledTourActivity.tourId) : null)
+      ?? leadTours.find((candidate) => candidate.status === "scheduled")
+      ?? leadTours[0];
+
+  const assignedToName = tour
+    ? orgMembers.find((member) => member.id === tour.assignedTo)?.name ?? tour.assignedToName
+    : "";
+  const assignedToLabel = assignedToName || tour?.assignedToName || "";
 
   const name = tour?.leadName ?? lead?.name ?? "Lead";
   const phone = tour?.phone ?? lead?.phone ?? "";
@@ -204,7 +230,7 @@ export function LeadControlPanel({ subject, trigger, defaultTab = "overview" }: 
               </p>
               {tour && (
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {tour.propertyName} · {tour.tourDate} {tour.tourTime} · TCM {tour.assignedToName}
+                  {tour.propertyName} · {tour.tourDate} {formatTime12h(tour.tourTime)} · TCM {assignedToName}
                 </p>
               )}
             </div>
@@ -250,7 +276,7 @@ export function LeadControlPanel({ subject, trigger, defaultTab = "overview" }: 
               <Info icon={<Wallet className="h-3.5 w-3.5" />} label="Budget" value={`₹${budget.toLocaleString()}/mo`} />
               <Info icon={<MapPin className="h-3.5 w-3.5" />} label="Area" value={area} />
               {tour && <Info icon={<Building2 className="h-3.5 w-3.5" />} label="Property" value={property!} />}
-              {tour && <Info icon={<Clock className="h-3.5 w-3.5" />} label="Slot" value={`${tour.tourDate} ${tour.tourTime}`} />}
+              {tour && <Info icon={<Clock className="h-3.5 w-3.5" />} label="Slot" value={`${tour.tourDate} ${formatTime12h(tour.tourTime)}`} />}
               {lead && <Info icon={<Tag className="h-3.5 w-3.5" />} label="Source" value={lead.addedByName ?? "—"} />}
               {lead && <Info icon={<Clock className="h-3.5 w-3.5" />} label="Move-in" value={lead.moveInDate} />}
             </div>
@@ -297,8 +323,8 @@ export function LeadControlPanel({ subject, trigger, defaultTab = "overview" }: 
           <TabsContent value="actions" className="mt-3 space-y-2">
             <div className="space-y-2">
               {[
-                { label: "Reconfirm tour", text: `Hi ${name}, just confirming your tour today at ${tour?.tourTime ?? "the scheduled time"} for ${property ?? "the property"}. Reply YES to confirm.` },
-                { label: "Send directions", text: `Hi ${name}, here are directions for your visit: https://maps.google.com/?q=${encodeURIComponent(property ?? area)}. TCM ${tour?.assignedToName ?? ""} will meet you.` },
+                { label: "Reconfirm tour", text: `Hi ${name}, just confirming your tour today at ${tour ? formatTime12h(tour.tourTime) : "the scheduled time"} for ${property ?? "the property"}. Reply YES to confirm.` },
+                { label: "Send directions", text: `Hi ${name}, here are directions for your visit: https://maps.google.com/?q=${encodeURIComponent(property ?? area)}. TCM ${assignedToLabel} will meet you.` },
                 { label: "Urgency nudge", text: `Hi ${name}, only 2 beds left in your range at ${property ?? "this property"}. 3 others viewing today. Hold expires in 4 hours. Reply YES to lock.` },
                 { label: "Post-tour check-in", text: `Hi ${name}, hope the visit went well! Did you like the place? Reply 1: Loved it · 2: Good unsure · 3: Need better options.` },
                 { label: "Token request", text: `Hi ${name}, lock your bed at ${property ?? ""} with a refundable ₹2,000 token. Pay here: gharpayy.com/pay/${tour?.id ?? ""}` },

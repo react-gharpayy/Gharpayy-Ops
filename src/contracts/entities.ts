@@ -108,6 +108,7 @@ export const ActivityKind = z.enum([
   "assigned",
   "field_changed",
   "todo_linked",
+  "tour_scheduled",
   // User-logged
   "call",
   "email",
@@ -164,3 +165,45 @@ export const Activity = z.object({
   createdAt: z.string(),
 });
 export type Activity = z.infer<typeof Activity>;
+
+export const TourStatus = z.enum(["scheduled", "confirmed", "completed", "no-show", "cancelled"]);
+export type TourStatus = z.infer<typeof TourStatus>;
+
+export const TourOutcome = z.enum([
+  "booked",
+  "token-paid",
+  "draft",
+  "follow-up",
+  "rejected",
+  "not-interested",
+]).nullable();
+export type TourOutcome = z.infer<typeof TourOutcome>;
+
+export const PostTourUpdate = z.object({
+  outcome: TourOutcome.default(null),
+  confidence: z.number().int().min(0).max(100).default(0),
+  objection: z.string().nullable().default(null),
+  objectionNote: z.string().max(2000).default(""),
+  expectedDecisionAt: z.string().nullable().default(null),
+  nextFollowUpAt: z.string().nullable().default(null),
+  filledAt: z.string().nullable().default(null),
+});
+export type PostTourUpdate = z.infer<typeof PostTourUpdate>;
+
+export const Tour = z.object({
+  _id: z.string(),
+  leadId: z.string(),
+  propertyId: z.string().nullable().default(null),
+  assignedTo: z.string(),
+  scheduledBy: z.string(),
+  scheduledAt: z.string(),
+  status: TourStatus.default("scheduled"),
+  showUp: z.boolean().nullable().optional().default(null),
+  customPropertyName: z.string().optional().default(""),
+  bookingSource: z.string().default("whatsapp"),
+  postTour: PostTourUpdate.default({}),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  tenantId: z.string(),
+});
+export type Tour = z.infer<typeof Tour>;

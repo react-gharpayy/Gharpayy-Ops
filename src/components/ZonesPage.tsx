@@ -124,7 +124,10 @@ export function ZonesPage() {
             </Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Create Zone</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Create Zone</DialogTitle>
+              <DialogDescription>Create a new zone to organize your leads and properties.</DialogDescription>
+            </DialogHeader>
             <div className="space-y-3">
               <Input
                 placeholder="Zone name (e.g. Marathahalli Cluster)"
@@ -166,7 +169,10 @@ export function ZonesPage() {
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit Zone</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Edit Zone</DialogTitle>
+            <DialogDescription>Update the zone name and city information.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-3">
             <Input
               placeholder="Zone name"
@@ -204,7 +210,6 @@ export function ZonesPage() {
           </div>
         </DialogContent>
       </Dialog>
-
       {loading ? (
         <div className="text-sm text-muted-foreground">Loading…</div>
       ) : zones.length === 0 ? (

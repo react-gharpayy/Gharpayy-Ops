@@ -3,11 +3,12 @@
 // before the backend is deployed. Auto-engaged when VITE_API_URL is unset
 // or the server is unreachable.
 import { ulid } from "@/contracts";
-import type { Todo, Activity, DomainEvent, Lead } from "@/contracts";
+import type { Todo, Activity, DomainEvent, Lead, Tour } from "@/contracts";
 
 const TODOS_KEY = "gharpayy.local.todos";
 const ACTS_KEY = "gharpayy.local.activities";
 const LEADS_KEY = "gharpayy.local.leads";
+const TOURS_KEY = "myt:tours";
 const TENANT = "local";
 const USER = "local-user";
 
@@ -77,8 +78,13 @@ export const localAdapter = {
     return { items: items.slice(0, q.limit ?? 100), nextCursor: null as string | null };
   },
 
+  listTours() {
+    const items = read<Tour>(TOURS_KEY);
+    return { items: items.sort((a, b) => b._id.localeCompare(a._id)), nextCursor: null as string | null };
+  },
+
   // ---------- Commands ----------
-  command(cmd: CmdIn): { ok: true; eventIds: string[] } | { ok: false; error: string } {
+  command(cmd: CmdIn): { ok: true; eventIds: string[]; data?: unknown } | { ok: false; error: string } {
     try {
       const correlationId = cmd._id;
       const t = cmd.type;
@@ -254,6 +260,77 @@ export const localAdapter = {
         const evt = { ...env(correlationId), type: "evt.lead.deleted" as const, payload: { leadId: p.leadId } };
         emit(evt as DomainEvent);
         return { ok: true, eventIds: [evt._id] };
+      }
+
+      if (t === "cmd.tour.schedule") {
+        const p = cmd.payload as { leadId: string; propertyId?: string | null; tcmId: string; scheduledAt: string; bookingSource?: string };
+        const tour: Tour = {
+          _id: ulid(),
+          leadId: p.leadId,
+          propertyId: p.propertyId ?? null,
+          assignedTo: p.tcmId,
+          scheduledBy: USER,
+          scheduledAt: p.scheduledAt,
+          status: "scheduled",
+          bookingSource: p.bookingSource ?? "whatsapp",
+          postTour: { outcome: null, confidence: 0, objection: null, objectionNote: "", expectedDecisionAt: null, nextFollowUpAt: null, filledAt: null },
+          createdAt: nowISO(),
+          updatedAt: nowISO(),
+          tenantId: TENANT,
+        };
+        const list = read<Tour>(TOURS_KEY); list.unshift(tour); write(TOURS_KEY, list);
+        const evt = { ...env(correlationId), type: "evt.tour.scheduled" as const, payload: { tour } };
+        emit(evt as DomainEvent);
+        return { ok: true, eventIds: [evt._id], data: { tour } };
+      }
+
+      if (t === "cmd.tour.reschedule") {
+        const p = cmd.payload as { tourId: string; scheduledAt: string };
+        const list = read<Tour>(TOURS_KEY);
+        const idx = list.findIndex((x) => x._id === p.tourId);
+        if (idx < 0) return { ok: false, error: "Tour not found" };
+        list[idx] = { ...list[idx], scheduledAt: p.scheduledAt, updatedAt: nowISO() };
+        write(TOURS_KEY, list);
+        const evt = { ...env(correlationId), type: "evt.tour.rescheduled" as const, payload: { tourId: p.tourId, scheduledAt: p.scheduledAt } };
+        emit(evt as DomainEvent);
+        return { ok: true, eventIds: [evt._id], data: { tour: list[idx] } };
+      }
+
+      if (t === "cmd.tour.cancel") {
+        const p = cmd.payload as { tourId: string };
+        const list = read<Tour>(TOURS_KEY);
+        const idx = list.findIndex((x) => x._id === p.tourId);
+        if (idx < 0) return { ok: false, error: "Tour not found" };
+        list[idx] = { ...list[idx], status: "cancelled", updatedAt: nowISO() };
+        write(TOURS_KEY, list);
+        const evt = { ...env(correlationId), type: "evt.tour.cancelled" as const, payload: { tourId: p.tourId } };
+        emit(evt as DomainEvent);
+        return { ok: true, eventIds: [evt._id], data: { tour: list[idx] } };
+      }
+
+      if (t === "cmd.tour.complete") {
+        const p = cmd.payload as { tourId: string };
+        const list = read<Tour>(TOURS_KEY);
+        const idx = list.findIndex((x) => x._id === p.tourId);
+        if (idx < 0) return { ok: false, error: "Tour not found" };
+        list[idx] = { ...list[idx], status: "completed", updatedAt: nowISO() };
+        write(TOURS_KEY, list);
+        const evt = { ...env(correlationId), type: "evt.tour.completed" as const, payload: { tourId: p.tourId } };
+        emit(evt as DomainEvent);
+        return { ok: true, eventIds: [evt._id], data: { tour: list[idx] } };
+      }
+
+      if (t === "cmd.tour.update_post_tour") {
+        const p = cmd.payload as { tourId: string; patch: Record<string, unknown> };
+        const list = read<Tour>(TOURS_KEY);
+        const idx = list.findIndex((x) => x._id === p.tourId);
+        if (idx < 0) return { ok: false, error: "Tour not found" };
+        const next = { ...list[idx], postTour: { ...list[idx].postTour, ...(p.patch as Partial<Tour["postTour"]>) }, updatedAt: nowISO() };
+        list[idx] = next;
+        write(TOURS_KEY, list);
+        const evt = { ...env(correlationId), type: "evt.tour.updated" as const, payload: { tourId: p.tourId, patch: p.patch } };
+        emit(evt as DomainEvent);
+        return { ok: true, eventIds: [evt._id], data: { tour: next } };
       }
 
       return { ok: true, eventIds: [] };

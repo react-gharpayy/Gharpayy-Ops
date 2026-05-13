@@ -27,6 +27,7 @@ import { usePipRouteSync } from "./pip/usePipSync";
 import { ClientOnly } from "./ClientOnly";
 import { QuickCreateMenu } from "./QuickCreateMenu";
 import { LiveLeadsBridge } from "./LiveLeadsBridge";
+import { LiveToursBridge } from "./LiveToursBridge";
 import { useAuthUser } from "@/lib/auth-store";
 import { useAppState } from "@/myt/lib/app-context";
 
@@ -41,6 +42,7 @@ type NavItem = { to: string; label: string; icon: typeof Target; badge?: number;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { role, setRole, currentTcmId, setCurrentTcmId, tcms, leads, tours, followUps, handoffs, bookings } = useApp();
+  const selectedLeadId = useApp((s) => s.selectedLeadId);
   const { setCurrentMemberId } = useAppState();
   const authUser = useAuthUser((s) => s.user);
   const hydrateAuth = useAuthUser((s) => s.hydrate);
@@ -50,7 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     super_admin: ["super-admin"],
     manager:     ["hr"],
     admin:       ["hr"],
-    member:      ["flow-ops", "tcm"],
+    member:      ["flow-ops"],
     owner:       ["owner"],
   };
   const dbRole = authUser?.role;
@@ -118,6 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     hr: [
       { to: "/today", label: "Today", icon: Sun, badge: queue.length },
       { to: "/leads", label: "Leads", icon: Target, accent: true },
+      { to: "/myt/tours", label: "Tours", icon: CalendarPlus },
       { to: "/myt/war-room", label: "War Room", icon: Swords },
       { to: "/myt/team", label: "Team", icon: Users },
       { to: "/revenue", label: "Revenue", icon: IndianRupee },
@@ -162,6 +165,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     "super-admin": [
       { to: "/today", label: "Today", icon: Sun, badge: queue.length },
       { to: "/leads", label: "Leads", icon: Target, accent: true },
+      { to: "/myt/tours", label: "Tours", icon: CalendarPlus },
       { to: "/myt/war-room", label: "War Room", icon: Swords },
       { to: "/myt/team", label: "Team", icon: Users },
       { to: "/revenue", label: "Revenue", icon: IndianRupee },
@@ -179,11 +183,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   
 
   const isActive = (to: string) => (to === "/" ? path === "/" : path === to || path.startsWith(to + "/"));
+  const shouldMountMytBridges = path.startsWith("/myt");
 
   return (
     <PictureInPictureProvider>
       <PipRouteSyncBridge />
       <LiveLeadsBridge />
+      {shouldMountMytBridges ? <LiveToursBridge /> : null}
       <div className="min-h-screen flex w-full bg-background text-foreground">
       {/* Sidebar */}
       <aside className="hidden md:flex w-[240px] flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border sticky top-0 h-screen">
@@ -199,7 +205,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {(() => {
           const roleMeta = {
-            "flow-ops": { label: "Flow Ops", dot: "bg-info" },
+            "flow-ops": { label: "Flow Ops / TCM", dot: "bg-info" },
             tcm: { label: "TCM Desk", dot: "bg-accent" },
             hr: { label: "HR / Leadership", dot: "bg-success" },
             owner: { label: "Owner Portal", dot: "bg-warning" },
@@ -255,7 +261,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="text-[10px] uppercase tracking-wider text-sidebar-foreground px-1">View as</div>
           {(() => {
             const labels: Record<string, string> = {
-              "flow-ops": "Flow Ops",
+              "flow-ops": "Flow Ops / TCM",
               tcm: "TCM",
               hr: "HR / Leadership",
               owner: "Property Owner",
@@ -370,7 +376,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
       {/* Overlays */}
-      <LeadControlPanel />
+      {selectedLeadId ? <LeadControlPanel /> : null}
       <CommandPalette />
       <CoachWidget />
       </div>

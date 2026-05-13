@@ -7,7 +7,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut,
 } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -83,29 +83,40 @@ export function QuickCreateMenu() {
       {/* Lead from paste — paste box first, then full Quick Add field set for review */}
       <Dialog open={dialog === "lead"} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Paste a lead — auto-extract every field</DialogTitle></DialogHeader>
-          <LeadPasteParser onDone={() => setDialog(null)} />
+          <DialogHeader>
+            <DialogTitle>Paste a lead — auto-extract every field</DialogTitle>
+            <DialogDescription>Paste lead details and review extracted fields before saving.</DialogDescription>
+          </DialogHeader>
+          {dialog === "lead" ? <LeadPasteParser onDone={() => setDialog(null)} /> : null}
         </DialogContent>
       </Dialog>
 
       {/* Quick todo */}
       <Dialog open={dialog === "todo"} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Quick todo</DialogTitle></DialogHeader>
-          <QuickTodoForm onDone={() => setDialog(null)} />
+          <DialogHeader>
+            <DialogTitle>Quick todo</DialogTitle>
+            <DialogDescription>Create a personal task quickly from anywhere in the app.</DialogDescription>
+          </DialogHeader>
+          {dialog === "todo" ? <QuickTodoForm onDone={() => setDialog(null)} /> : null}
         </DialogContent>
       </Dialog>
 
       {/* Quick note */}
       <Dialog open={dialog === "note"} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Quick note → todo</DialogTitle></DialogHeader>
-          <QuickTodoForm onDone={() => setDialog(null)} placeholder="What just happened? (becomes a personal task)" />
+          <DialogHeader>
+            <DialogTitle>Quick note → todo</DialogTitle>
+            <DialogDescription>Capture context now and convert it into a trackable todo.</DialogDescription>
+          </DialogHeader>
+          {dialog === "note" ? (
+            <QuickTodoForm onDone={() => setDialog(null)} placeholder="What just happened? (becomes a personal task)" />
+          ) : null}
         </DialogContent>
       </Dialog>
 
       {/* Quick Add Lead panel */}
-      <QuickAddLeadPanel open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+      {quickAddOpen ? <QuickAddLeadPanel open={quickAddOpen} onClose={() => setQuickAddOpen(false)} /> : null}
     </>
   );
 }

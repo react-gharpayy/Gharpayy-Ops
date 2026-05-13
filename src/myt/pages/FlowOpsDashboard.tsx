@@ -4,7 +4,7 @@ import { useAppState } from '@/myt/lib/app-context';
 import { MetricCard } from '@/myt/components/MetricCard';
 import { CalendarCheck, Phone, TrendingUp, FileText, Target, CalendarPlus, Sparkles } from 'lucide-react';
 import { CycleData } from '@/myt/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, formatTime12h } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { LeadControlPanel } from '@/myt/components/LeadControlPanel';
 import { GlueFeed } from '@/components/GlueFeed';
@@ -177,7 +177,7 @@ export default function FlowOpsDashboard() {
                   <span className="text-muted-foreground text-xs">{t.propertyName}</span>
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">
-                  {t.area} · {t.tourDate} {t.tourTime} · TCM {t.assignedToName}
+                  {t.area} · {t.tourDate} {formatTime12h(t.tourTime)} · TCM {t.assignedToName}
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">

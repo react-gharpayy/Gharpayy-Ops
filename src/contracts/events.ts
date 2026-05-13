@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Lead, Todo, Activity } from "./entities.js";
+import { Lead, Todo, Activity, TourStatus } from "./entities.js";
 
 // Event registry — every event the system can emit. Server publishes, client + workers subscribe.
 export const EventType = z.enum([
@@ -22,8 +22,10 @@ export const EventType = z.enum([
   "evt.activity.deleted",
   // Future modules — declare now so contracts stay stable.
   "evt.tour.scheduled",
+  "evt.tour.rescheduled",
   "evt.tour.completed",
   "evt.tour.cancelled",
+  "evt.tour.updated",
   "evt.room.blocked",
   "evt.room.released",
 ]);
@@ -106,6 +108,27 @@ export const ActivityDeletedEvt = Envelope.extend({
   payload: z.object({ activityId: z.string(), entityType: z.string(), entityId: z.string() }),
 });
 
+export const TourScheduledEvt = Envelope.extend({
+  type: z.literal("evt.tour.scheduled"),
+  payload: z.object({ tour: z.object({ _id: z.string(), leadId: z.string(), propertyId: z.string().nullable(), assignedTo: z.string(), scheduledBy: z.string(), scheduledAt: z.string(), status: TourStatus, bookingSource: z.string(), createdAt: z.string(), updatedAt: z.string() }) }),
+});
+export const TourRescheduledEvt = Envelope.extend({
+  type: z.literal("evt.tour.rescheduled"),
+  payload: z.object({ tourId: z.string(), scheduledAt: z.string() }),
+});
+export const TourCompletedEvt = Envelope.extend({
+  type: z.literal("evt.tour.completed"),
+  payload: z.object({ tourId: z.string() }),
+});
+export const TourCancelledEvt = Envelope.extend({
+  type: z.literal("evt.tour.cancelled"),
+  payload: z.object({ tourId: z.string() }),
+});
+export const TourUpdatedEvt = Envelope.extend({
+  type: z.literal("evt.tour.updated"),
+  payload: z.object({ tourId: z.string(), patch: z.record(z.string(), z.unknown()) }),
+});
+
 export const DomainEvent = z.discriminatedUnion("type", [
   LeadCreatedEvt,
   LeadUpdatedEvt,
@@ -122,5 +145,10 @@ export const DomainEvent = z.discriminatedUnion("type", [
   ActivityLoggedEvt,
   ActivityUpdatedEvt,
   ActivityDeletedEvt,
+  TourScheduledEvt,
+  TourRescheduledEvt,
+  TourCompletedEvt,
+  TourCancelledEvt,
+  TourUpdatedEvt,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;

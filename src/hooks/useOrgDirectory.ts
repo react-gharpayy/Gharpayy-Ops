@@ -8,65 +8,136 @@ export interface DirectoryMember {
   name: string;
   role: string;
   zones: string[];
+  adminId?: string | null;
+  managerId?: string | null;
 }
 
 export function useOrgMembers() {
   const [members, setMembers] = useState<DirectoryMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    const fetchMembers = async () => {
       try {
         const r = await api.users.listLite();
         if (cancelled) return;
-        setMembers(r.items.map((u: any) => ({ id: u._id, name: u.name, role: u.role, zones: u.zones || [] })));
-      } catch {
-        if (!cancelled) setMembers([]);
+        setMembers(r.items.map((u: any) => ({ 
+          id: u._id, 
+          name: u.name, 
+          role: u.role, 
+          zones: u.zones || [],
+          adminId: u.adminId,
+          managerId: u.managerId
+        })));
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        const error = err as Error;
+        console.warn(`[useOrgMembers] Failed to fetch members (attempt ${retryCount + 1}/${maxRetries}):`, error.message);
+        
+        if (retryCount < maxRetries - 1) {
+          retryCount++;
+          setTimeout(fetchMembers, Math.pow(2, retryCount) * 1000); // Exponential backoff
+          return;
+        }
+        
+        setError(error.message);
+        setMembers([]); // Fallback to empty array
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    };
+    
+    fetchMembers();
     return () => { cancelled = true; };
   }, []);
-  return { members, loading };
+  
+  return { members, loading, error };
 }
 
 export function useOrgZones() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    const fetchZones = async () => {
       try {
         const list = await api.zones.list();
-        if (!cancelled) setZones(list);
-      } catch {
-        if (!cancelled) setZones([]);
+        if (cancelled) return;
+        setZones(list);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        const error = err as Error;
+        console.warn(`[useOrgZones] Failed to fetch zones (attempt ${retryCount + 1}/${maxRetries}):`, error.message);
+        
+        if (retryCount < maxRetries - 1) {
+          retryCount++;
+          setTimeout(fetchZones, Math.pow(2, retryCount) * 1000); // Exponential backoff
+          return;
+        }
+        
+        setError(error.message);
+        setZones([]); // Fallback to empty array
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    };
+    
+    fetchZones();
     return () => { cancelled = true; };
   }, []);
-  return { zones, loading };
+  
+  return { zones, loading, error };
 }
 
 export function useOrgProperties() {
   const [properties, setProperties] = useState<import("@/lib/types").Property[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    const fetchProperties = async () => {
       try {
         const list = await api.properties.list();
-        if (!cancelled) setProperties(list);
-      } catch {
-        if (!cancelled) setProperties([]);
+        if (cancelled) return;
+        setProperties(list);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        const error = err as Error;
+        console.warn(`[useOrgProperties] Failed to fetch properties (attempt ${retryCount + 1}/${maxRetries}):`, error.message);
+        
+        if (retryCount < maxRetries - 1) {
+          retryCount++;
+          setTimeout(fetchProperties, Math.pow(2, retryCount) * 1000); // Exponential backoff
+          return;
+        }
+        
+        setError(error.message);
+        setProperties([]); // Fallback to empty array
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    };
+    
+    fetchProperties();
     return () => { cancelled = true; };
   }, []);
-  return { properties, loading };
+  
+  return { properties, loading, error };
 }

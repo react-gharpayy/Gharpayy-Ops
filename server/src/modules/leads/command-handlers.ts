@@ -93,12 +93,17 @@ async function applyCommand(cmd: Command, user: JwtClaims): Promise<LedgerDoc["r
   // Delegate todo commands
   if (cmd.type.startsWith("cmd.todo.")) {
     const { applyTodoCommand } = await import("../todos/command-handlers.js");
-    return applyTodoCommand(cmd, user);
+    return (applyTodoCommand as any)(cmd, user);
+  }
+  // Delegate tour commands
+  if (cmd.type.startsWith("cmd.tour.")) {
+    const { applyTourCommand } = await import("../tours/command-handlers.js");
+    return (applyTourCommand as any)(cmd, user);
   }
   // Delegate activity commands
   if (cmd.type.startsWith("cmd.activity.")) {
     const { applyActivityCommand } = await import("../activities/command-handlers.js");
-    return applyActivityCommand(cmd, user);
+    return (applyActivityCommand as any)(cmd, user);
   }
 
   const { autoLogActivity } = await import("../activities/command-handlers.js");

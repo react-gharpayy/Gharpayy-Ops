@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { api } from "@/lib/api/client";
 import { useApp, getProperty, getTcm } from "@/lib/store";
+import type { Tour as CrmTour } from "@/lib/types";
 import { useAppState } from "@/myt/lib/app-context";
 import { Tour } from "@/myt/lib/types";
 import { useOrgMembers } from "@/hooks/useOrgDirectory";
@@ -29,7 +31,7 @@ import { LeadDossierPanel } from "./crm10x/LeadDossierPanel";
 import {
   Phone, MessageSquare, Calendar as CalendarIcon, Tag, ClipboardCheck,
   AlertTriangle, CheckCircle2, X, Activity as ActivityIcon, MapPin,
-  Wallet, Send, Zap, IndianRupee, BellRing, ExternalLink, Plus,
+  Wallet, Send, Zap, IndianRupee, BellRing, ExternalLink,
   Building2, Video, Briefcase,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
@@ -58,6 +60,22 @@ const TEMPLATES = [
   { id: "post-tour", label: "Post-tour check-in", body: "Hi! How did you find the property? Happy to answer any questions." },
   { id: "scarcity", label: "Scarcity", body: "Just a heads-up — only a couple of beds left at this price." },
 ];
+
+function parseSafeDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatSafeDate(value: string | null | undefined, pattern: string, fallback = "-"): string {
+  const d = parseSafeDate(value);
+  return d ? format(d, pattern) : fallback;
+}
+
+function formatSafeDistance(value: string | null | undefined, fallback = "recently"): string {
+  const d = parseSafeDate(value);
+  return d ? formatDistanceToNow(d, { addSuffix: true }) : fallback;
+}
 
 type DrawerScheduleAnswers = {
   bookingSource: string;
@@ -96,7 +114,15 @@ export function LeadControlPanel() {
   }, [selectedLeadId, markHandoffsRead]);
 
   const leadTours = useMemo(
-    () => (lead ? tours.filter((t) => t.leadId === lead.id).sort((a, b) => +new Date(b.scheduledAt) - +new Date(a.scheduledAt)) : []),
+    () => (lead
+      ? tours
+          .filter((tour) => {
+            // Match by leadId (primary), then fallback to phone/name for legacy tours
+            if ((tour as any).leadId === lead.id) return true;
+            return tour.phone === lead.phone || tour.leadName === lead.name;
+          })
+          .sort((a, b) => +new Date(b.scheduledAt) - +new Date(a.scheduledAt))
+      : []),
     [tours, lead],
   );
   const leadActivities = useMemo(
@@ -110,7 +136,6 @@ export function LeadControlPanel() {
   const [tcmId, setTcmId] = useState("");
   const [propertyId, setPropertyId] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
-  const [isSchedulingAnother, setIsSchedulingAnother] = useState(false);
   const [scheduleAnswers, setScheduleAnswers] = useState({
     bookingSource: "whatsapp",
     decisionMaker: "self",
@@ -138,12 +163,18 @@ export function LeadControlPanel() {
     (t) => t.status === "completed" && !t.postTour.filledAt,
   );
   const upcomingTour = leadTours.find((t) => t.status === "scheduled");
+  const hasScheduledTour = Boolean(upcomingTour) || lead.stage === "tour-scheduled";
+  const scheduledTourActivity = leadActivities.find((a) => (a.kind === "tour_scheduled" || a.kind === "site_visit") && a.tourId) ?? null;
+  const scheduledTourFromActivity = scheduledTourActivity?.tourId
+    ? tours.find((candidate) => candidate.id === scheduledTourActivity.tourId)
+    : null;
+  const tourToShow = upcomingTour ?? scheduledTourFromActivity ?? (hasScheduledTour ? leadTours[0] ?? null : null);
 
   useEffect(() => {
     if (!lead) return;
-    setTcmId(upcomingTour?.tcmId ?? lead.assignedTcmId ?? currentMemberId ?? "");
-    setPropertyId(upcomingTour?.propertyId ?? "");
-    setScheduledAt(upcomingTour ? toLocal(upcomingTour.scheduledAt) : "");
+    setTcmId(tourToShow?.tcmId ?? lead.assignedTcmId ?? currentMemberId ?? "");
+    setPropertyId(tourToShow?.propertyId ?? "");
+    setScheduledAt(tourToShow ? toLocal(tourToShow.scheduledAt) : "");
     setScheduleAnswers((answers) => ({
       ...answers,
       budget: String(lead.budget || ""),
@@ -151,96 +182,201 @@ export function LeadControlPanel() {
       workLocation: lead.preferredArea || "",
       keyConcern: lead.tags.join(", "),
     }));
-    setIsSchedulingAnother(false);
-    setTab(pendingPostTour ? "post" : upcomingTour ? "tour" : settings.matching.drawerDefaultTab);
-  }, [lead, pendingPostTour, upcomingTour, settings.matching.drawerDefaultTab]);
+    setTab(pendingPostTour ? "post" : hasScheduledTour ? "tour" : settings.matching.drawerDefaultTab);
+  }, [lead, pendingPostTour, hasScheduledTour, settings.matching.drawerDefaultTab, tourToShow]);
+
+  useEffect(() => {
+    if (!lead || !hasScheduledTour || leadTours.length > 0 || scheduledTourFromActivity) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const { items } = await api.tours.list();
+        if (cancelled) return;
+
+        const wireTour = items.find((tour) => tour.leadId === lead.id && (tour.status === "scheduled" || tour.status === "confirmed"));
+        if (!wireTour) return;
+
+        // 1. Add to CRM store so tourToShow / leadTours can find it
+        const crmTour: CrmTour = {
+          id: wireTour._id,
+          leadId: wireTour.leadId,
+          propertyId: wireTour.propertyId ?? undefined,
+          tcmId: wireTour.assignedTo,
+          scheduledBy: wireTour.scheduledBy,
+          scheduledAt: wireTour.scheduledAt,
+          status: wireTour.status as CrmTour["status"],
+          decision: null,
+          postTour: {
+            outcome: null,
+            confidence: 0,
+            objection: null,
+            objectionNote: "",
+            expectedDecisionAt: null,
+            nextFollowUpAt: null,
+            filledAt: null,
+          },
+          createdAt: wireTour.createdAt,
+          updatedAt: wireTour.updatedAt ?? wireTour.createdAt,
+        };
+        useApp.setState((s) => ({
+          tours: s.tours.some((t) => t.id === crmTour.id)
+            ? s.tours.map((t) => (t.id === crmTour.id ? { ...t, ...crmTour } : t))
+            : [crmTour, ...s.tours],
+        }));
+
+        // 2. Also add MYT-format tour for /myt/schedule
+        const property = wireTour.propertyId ? properties.find((p) => p.id === wireTour.propertyId) : undefined;
+        const assignedTo = orgMembers.find((member) => member.id === wireTour.assignedTo);
+        const scheduledBy = orgMembers.find((member) => member.id === wireTour.scheduledBy);
+        const hydratedTour: Tour = {
+          id: wireTour._id,
+          leadId: wireTour.leadId,
+          leadName: lead.name,
+          phone: lead.phone || "",
+          assignedTo: wireTour.assignedTo,
+          assignedToName: assignedTo?.name ?? wireTour.assignedTo,
+          propertyName: property?.name ?? "Property Tour",
+          propertyId: wireTour.propertyId ?? undefined,
+          area: lead.preferredArea || "",
+          zoneId: "",
+          tourDate: wireTour.scheduledAt.slice(0, 10),
+          tourTime: wireTour.scheduledAt.slice(11, 16),
+          bookingSource: wireTour.bookingSource as Tour["bookingSource"],
+          scheduledBy: wireTour.scheduledBy,
+          scheduledByName: scheduledBy?.name ?? wireTour.scheduledBy,
+          leadType: "future",
+          status: wireTour.status as Tour["status"],
+          showUp: null,
+          outcome: null,
+          remarks: "",
+          budget: lead.budget || 0,
+          createdAt: wireTour.createdAt,
+          tourType: "physical",
+          intent: "medium",
+          confidenceScore: 50,
+          confidenceReason: [],
+          confirmationStrength: "tentative",
+          qualification: {
+            moveInDate: lead.moveInDate || "",
+            decisionMaker: "self",
+            roomType: "Single",
+            occupation: "",
+            workLocation: lead.preferredArea || "",
+            willBookToday: "maybe",
+            readyIn48h: false,
+            exploring: false,
+            comparing: false,
+            needsFamily: false,
+            keyConcern: "",
+          },
+          tokenPaid: false,
+          whyLost: null,
+        };
+
+        setTours((prev) => (prev.some((tour) => tour.id === hydratedTour.id)
+          ? prev.map((tour) => (tour.id === hydratedTour.id ? { ...tour, ...hydratedTour } : tour))
+          : [hydratedTour, ...prev]));
+      } catch (err) {
+        console.warn("[LeadControlPanel] failed to hydrate scheduled tour:", (err as Error).message);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasScheduledTour, lead, leadTours.length, orgMembers, properties, scheduledTourFromActivity, setTours]);
 
   if (!lead) return null;
 
   const selectedMember = orgMembers.find((m) => m.id === lead.assignedTcmId) ?? null;
 
-  const handleSchedule = () => {
+  const handleSchedule = async () => {
     if (!tcmId || !scheduledAt) {
       toast.error("Member and time are required");
       return;
     }
     const assignee = memberUsers.find((m) => m.id === tcmId) ?? null;
     const scheduler = currentMemberId ? (orgMembers.find((m) => m.id === currentMemberId) ?? null) : null;
-    const tour = scheduleTour({ leadId: lead.id, propertyId: propertyId || undefined, tcmId, scheduledAt: new Date(scheduledAt).toISOString() });
 
-    // Also create MYT tour for the schedule page
-    const scheduledDateTime = new Date(scheduledAt);
-    const mytTour = {
-      id: tour.id,
-      leadName: lead.name,
-      phone: lead.phone || "",
-      assignedTo: tcmId,
-      assignedToName: assignee?.name ?? "Member",
-      propertyName: propertyId ? properties.find(p => p.id === propertyId)?.name ?? "Property Tour" : "Property Tour",
-      propertyId: propertyId || undefined,
-      area: lead.preferredArea || "",
-      zoneId: "", // Will be determined by area
-      tourDate: scheduledDateTime.toISOString().split('T')[0],
-      tourTime: scheduledDateTime.toTimeString().split(' ')[0].substring(0, 5),
-      bookingSource: "whatsapp" as const,
-      scheduledBy: scheduler?.id ?? currentMemberId ?? tcmId,
-      scheduledByName: scheduler?.name ?? "You",
-      leadType: "future" as const,
-      status: "scheduled" as const,
-      showUp: null,
-      outcome: null,
-      remarks: "",
-      budget: lead.budget || 0,
-      createdAt: new Date().toISOString(),
-      tourType: "physical" as const,
-      intent: "medium" as const,
-      confidenceScore: 50,
-      confidenceReason: [],
-      confirmationStrength: "tentative" as const,
-      qualification: {
-        moveInDate: lead.moveInDate || "",
-        decisionMaker: "self" as const,
-        roomType: "Single",
-        budget: String(lead.budget || ""),
-        occupation: "",
-        workLocation: lead.preferredArea || "",
-        readyIn48h: false,
-        exploring: false,
-        comparing: false,
-        needsFamily: false,
-        willBookToday: "maybe" as const,
-        keyConcern: "",
+    try {
+      const tour = await scheduleTour({ leadId: lead.id, propertyId: propertyId || undefined, tcmId, scheduledAt: new Date(scheduledAt).toISOString() });
+
+      // MYT tour is created by LiveToursBridge from the server event.
+      // Only create a local MYT entry as a fast optimistic update so /myt/schedule
+      // shows the tour immediately. LiveToursBridge will reconcile later.
+      const scheduledDateTime = new Date(scheduledAt);
+      const mytTour = {
+        id: tour.id,
+        leadId: lead.id,
+        leadName: lead.name,
+        phone: lead.phone || "",
+        assignedTo: tcmId,
+        assignedToName: assignee?.name ?? "Member",
+        propertyName: propertyId ? properties.find(p => p.id === propertyId)?.name ?? "Property Tour" : "Property Tour",
+        propertyId: propertyId || undefined,
+        area: lead.preferredArea || "",
+        zoneId: "",
+        tourDate: scheduledDateTime.toISOString().split('T')[0],
+        tourTime: scheduledDateTime.toTimeString().split(' ')[0].substring(0, 5),
+        bookingSource: "whatsapp" as const,
+        scheduledBy: scheduler?.id ?? currentMemberId ?? tcmId,
+        scheduledByName: scheduler?.name ?? "You",
+        leadType: "future" as const,
+        status: "scheduled" as const,
+        showUp: null,
+        outcome: null,
+        remarks: "",
+        budget: lead.budget || 0,
+        createdAt: new Date().toISOString(),
         tourType: "physical" as const,
-      },
-      tokenPaid: false,
-      whyLost: null,
-    };
-    setTours(prev => [mytTour, ...prev]);
+        intent: "medium" as const,
+        confidenceScore: 50,
+        confidenceReason: [],
+        confirmationStrength: "tentative" as const,
+        qualification: {
+          moveInDate: lead.moveInDate || "",
+          decisionMaker: "self" as const,
+          roomType: "Single",
+          budget: String(lead.budget || ""),
+          occupation: "",
+          workLocation: lead.preferredArea || "",
+          readyIn48h: false,
+          exploring: false,
+          comparing: false,
+          needsFamily: false,
+          willBookToday: "maybe" as const,
+          keyConcern: "",
+          tourType: "physical" as const,
+        },
+        tokenPaid: false,
+        whyLost: null,
+      };
+      setTours(prev => {
+        // Avoid duplicates if LiveToursBridge already added it
+        if (prev.some(t => t.id === mytTour.id)) return prev;
+        return [mytTour, ...prev];
+      });
 
-    notifyTourScheduled({
-      tourId: tour.id,
-      leadName: lead.name,
-      senderId: scheduler?.id ?? tcmId,
-      senderName: scheduler?.name ?? selectedMember?.name ?? "You",
-      assigneeName: assignee?.name ?? selectedMember?.name ?? "Member",
-      recipientIds: [
-        { id: tcmId, name: assignee?.name ?? selectedMember?.name ?? "Member" },
-        ...(scheduler?.id && scheduler.id !== tcmId ? [{ id: scheduler.id, name: scheduler.name }] : []),
-      ],
-    });
-    setTcmId("");
-    setPropertyId("");
-    setScheduledAt("");
-    setIsSchedulingAnother(false);
-    toast.success("Tour scheduled");
-  };
-
-  const startAnotherTour = () => {
-    setTcmId(lead.assignedTcmId ?? currentMemberId ?? "");
-    setPropertyId("");
-    setScheduledAt("");
-    setIsSchedulingAnother(true);
-    setTab("tour");
+      notifyTourScheduled({
+        tourId: tour.id,
+        leadName: lead.name,
+        senderId: scheduler?.id ?? currentMemberId ?? tcmId,
+        senderName: scheduler?.name ?? "You",
+        assigneeName: assignee?.name ?? "Member",
+        recipientIds: [
+          { id: tcmId, name: assignee?.name ?? "Member" },
+          ...(scheduler?.id && scheduler.id !== tcmId ? [{ id: scheduler.id, name: scheduler.name }] : []),
+        ],
+      });
+      setTcmId("");
+      setPropertyId("");
+      setScheduledAt("");
+      toast.success("Tour scheduled");
+    } catch (err) {
+      console.error("[LeadControlPanel] Failed to schedule tour:", err);
+      toast.error("Failed to schedule tour. Please try again.");
+    }
   };
 
   return (
@@ -263,7 +399,7 @@ export function LeadControlPanel() {
             <ObjectionTag leadId={lead.id} />
           </div>
           <div className="grid grid-cols-3 gap-2 pt-1 text-xs">
-            <Meta icon={CalendarIcon} label="Move-in" value={format(new Date(lead.moveInDate), "MMM d")} />
+            <Meta icon={CalendarIcon} label="Move-in" value={formatSafeDate(lead.moveInDate, "MMM d", "TBD")} />
             <Meta icon={Wallet} label="Budget" value={`₹${(lead.budget / 1000).toFixed(0)}k`} />
             <Meta icon={MapPin} label="Area" value={lead.preferredArea} />
           </div>
@@ -280,7 +416,7 @@ export function LeadControlPanel() {
             <div className="text-xs">
               <div className="font-semibold text-destructive">Post-tour update missing</div>
               <div className="text-muted-foreground">
-                Tour completed {mounted ? formatDistanceToNow(new Date(pendingPostTour.scheduledAt), { addSuffix: true }) : "recently"}.
+                Tour completed {mounted ? formatSafeDistance(pendingPostTour.scheduledAt, "recently") : "recently"}.
                 TCM must fill the form below.
               </div>
             </div>
@@ -487,7 +623,7 @@ export function LeadControlPanel() {
                 </div>
                 {lead.nextFollowUpAt && (
                   <div className="text-[11px] text-muted-foreground">
-                    Due {mounted ? formatDistanceToNow(new Date(lead.nextFollowUpAt), { addSuffix: true }) : "soon"}
+                    Due {mounted ? formatSafeDistance(lead.nextFollowUpAt, "soon") : "soon"}
                   </div>
                 )}
               </Section>
@@ -531,55 +667,17 @@ export function LeadControlPanel() {
 
             {/* TOUR */}
             <TabsContent value="tour" className="space-y-4 pt-4">
-              {leadTours.length > 0 && (
-                <Button variant="secondary" size="sm" className="w-full gap-1.5" onClick={startAnotherTour}>
-                  <Plus className="h-3.5 w-3.5" /> Schedule another Tour for this lead
-                </Button>
-              )}
-              {upcomingTour ? (
+              {tourToShow ? (
                 <Section title="Upcoming tour">
                   <UpcomingTourCard
-                    tour={upcomingTour}
-                    scheduledAt={scheduledAt}
-                    onScheduledAtChange={setScheduledAt}
-                    onReschedule={() => {
-                      if (!scheduledAt) {
-                        toast.error("Choose a date and time to reschedule");
-                        return;
-                      }
-                      rescheduleTour(upcomingTour.id, new Date(scheduledAt).toISOString());
-                      toast.success("Tour rescheduled");
-                    }}
-                    onCancel={() => {
-                      const prevAt = upcomingTour.scheduledAt;
-                      const tourId = upcomingTour.id;
-                      cancelTour(tourId);
-                      toast("Tour cancelled", {
-                        description: `${lead.name} · ${format(new Date(prevAt), "MMM d, p")}`,
-                        action: {
-                          label: "Undo",
-                          onClick: () => {
-                            // restore by rescheduling — store doesn't track 'cancelled' undo cleanly
-                            useApp.getState().rescheduleTour(tourId, prevAt);
-                            useApp.setState((s) => ({
-                              tours: s.tours.map((x) => x.id === tourId ? { ...x, status: "scheduled" } : x),
-                            }));
-                            toast.success("Tour restored");
-                          },
-                        },
-                        duration: 5000,
-                      });
-                    }}
-                     onComplete={() => {
-                       completeTour(upcomingTour.id);
-                       setTab("post");
-                       toast.success("Tour completed — fill the post-tour form");
-                     }}
+                    tour={tourToShow}
+                    members={orgMembers}
+                    leadName={lead.name}
                   />
                 </Section>
               ) : null}
 
-              {(!upcomingTour || isSchedulingAnother) ? (
+              {!hasScheduledTour ? (
                 <InlineScheduleTour
                   lead={lead}
                   properties={properties}
@@ -605,7 +703,7 @@ export function LeadControlPanel() {
                         <div key={t.id} className="rounded-lg border border-border bg-card p-3 text-xs space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="font-medium">{prop?.name}</span>
-                            <span className="text-muted-foreground">{format(new Date(t.scheduledAt), "MMM d, p")}</span>
+                            <span className="text-muted-foreground">{formatSafeDate(t.scheduledAt, "MMM d, p", "time unknown")}</span>
                           </div>
                           <div className="flex items-center gap-2 text-[11px]">
                             <Badge variant="outline" className="capitalize">{t.status}</Badge>
@@ -640,7 +738,7 @@ export function LeadControlPanel() {
                 return (
                   <div className="space-y-4">
                     <div className="text-xs text-muted-foreground">
-                      Tour at <span className="text-foreground font-medium">{prop?.name}</span> · {format(new Date(target.scheduledAt), "MMM d, p")}
+                      Tour at <span className="text-foreground font-medium">{prop?.name}</span> · {formatSafeDate(target.scheduledAt, "MMM d, p", "time unknown")}
                     </div>
 
                     {/* Send updates / reminders — one row, always visible post-tour */}
@@ -759,7 +857,7 @@ export function LeadControlPanel() {
                     {pt.filledAt ? (
                       <div className="rounded-lg border border-success/30 bg-success/5 p-3 flex items-center gap-2 text-xs">
                         <CheckCircle2 className="h-4 w-4 text-success" />
-                        <span>Form complete · saved {mounted ? formatDistanceToNow(new Date(pt.filledAt), { addSuffix: true }) : "recently"}</span>
+                        <span>Form complete · saved {mounted ? formatSafeDistance(pt.filledAt, "recently") : "recently"}</span>
                       </div>
                     ) : (
                       <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 flex items-center gap-2 text-xs">
@@ -820,7 +918,7 @@ export function LeadControlPanel() {
                       <div className="flex-1">
                         <div className="text-foreground">{a.text}</div>
                         <div className="text-muted-foreground text-[10px] mt-0.5">
-                          {format(new Date(a.ts), "MMM d, p")} · {a.actor === "system" ? "system" : tcms.find((t) => t.id === a.actor)?.name ?? a.actor}
+                          {formatSafeDate(a.ts, "MMM d, p", "time unknown")} · {a.actor === "system" ? "system" : tcms.find((t) => t.id === a.actor)?.name ?? a.actor}
                         </div>
                       </div>
                     </div>
@@ -866,53 +964,174 @@ function Meta({ icon: Icon, label, value }: { icon: typeof CalendarIcon; label: 
 
 function UpcomingTourCard({
   tour,
-  scheduledAt,
-  onScheduledAtChange,
-  onReschedule,
-  onCancel,
-  onComplete,
+  members,
+  leadName,
 }: {
   tour: import("@/lib/types").Tour;
-  scheduledAt: string;
-  onScheduledAtChange: (value: string) => void;
-  onReschedule: () => void;
-  onCancel: () => void;
-  onComplete: () => void;
+  members: { id: string; name: string; role: string; zones: string[] }[];
+  leadName?: string;
 }) {
-  const { properties, tcms } = useApp();
+  const { properties, rescheduleTour, cancelTour } = useApp();
   const prop = properties.find((p) => p.id === tour.propertyId);
-  const tcm = tcms.find((t) => t.id === tour.tcmId);
+  
+  // Handle both old CRM tour format (tcmId) and new MYT tour format (assignedTo, assignedToName)
+  const assignedToId = (tour as any).assignedTo ?? (tour as any).tcmId;
+  const assignedToName = (tour as any).assignedToName ?? members.find((m) => m.id === assignedToId)?.name ?? assignedToId ?? "TBD";
+  const scheduledById = (tour as any).scheduledBy;
+  const scheduledByName = (tour as any).scheduledByName ?? members.find((m) => m.id === scheduledById)?.name ?? scheduledById ?? "TBD";
+  const tourType = (tour as any).tourType ?? "physical";
+  const qualification = (tour as any).qualification;
+  const displayLeadName = (tour as any).leadName ?? leadName ?? "";
+  const phone = (tour as any).phone ?? "";
+  const budget = (tour as any).budget ?? 0;
+  const area = (tour as any).area ?? "";
+  
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [newDateTime, setNewDateTime] = useState(() => toLocal(tour.scheduledAt));
+
   return (
-    <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2">
+    <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 space-y-3">
+      {/* Header with property and status */}
       <div className="flex items-center justify-between">
-        <div className="font-display font-semibold text-sm">{prop?.name ?? "Property TBD"}</div>
+        <div className="font-display font-semibold text-sm">{prop?.name ?? (tour as any).propertyName ?? (displayLeadName ? `${displayLeadName}'s Tour` : "Property TBD")}</div>
         <Badge className="bg-accent text-accent-foreground capitalize">{tour.status}</Badge>
       </div>
-      <div className="text-xs text-muted-foreground">
-        {format(new Date(tour.scheduledAt), "EEE, MMM d · p")}{tcm?.name ? ` · ${tcm.name}` : ""}
+
+      {/* Date, time, type */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <CalendarIcon className="h-3 w-3" />
+          {formatSafeDate(tour.scheduledAt, "EEE, MMM d · p", "time unknown")}
+        </span>
+        <Badge variant="outline" className="text-[10px] capitalize">{tourType.replace("-", " ")}</Badge>
       </div>
-      <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-        <Input
-          type="datetime-local"
-          value={scheduledAt}
-          onChange={(e) => onScheduledAtChange(e.target.value)}
-          className="h-9 text-sm"
-        />
-        <Button size="sm" onClick={onReschedule} className="gap-1.5">
-          <CalendarIcon className="h-3.5 w-3.5" /> Reschedule
-        </Button>
+
+      {/* Lead info row */}
+      {(displayLeadName || phone) && (
+        <div className="grid grid-cols-3 gap-2 text-[11px]">
+          {displayLeadName && (
+            <div className="rounded-md bg-background/60 px-2 py-1.5">
+              <span className="block text-muted-foreground">Lead</span>
+              <span className="font-medium text-foreground">{displayLeadName}</span>
+            </div>
+          )}
+          {phone && (
+            <div className="rounded-md bg-background/60 px-2 py-1.5">
+              <span className="block text-muted-foreground">Phone</span>
+              <span className="font-medium text-foreground">{phone}</span>
+            </div>
+          )}
+          {budget > 0 && (
+            <div className="rounded-md bg-background/60 px-2 py-1.5">
+              <span className="block text-muted-foreground">Budget</span>
+              <span className="font-medium text-foreground">₹{(budget / 1000).toFixed(0)}k</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Assigned / Scheduled by */}
+      <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <div className="rounded-md bg-background/60 px-2 py-1.5">
+          <span className="block text-muted-foreground">Assigned to</span>
+          <span className="font-medium text-foreground">{assignedToName}</span>
+        </div>
+        <div className="rounded-md bg-background/60 px-2 py-1.5">
+          <span className="block text-muted-foreground">Scheduled by</span>
+          <span className="font-medium text-foreground">{scheduledByName}</span>
+        </div>
       </div>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" className="flex-1" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button variant="default" size="sm" className="flex-1" onClick={onComplete}>
-          <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Complete
-        </Button>
-      </div>
+
+      {/* Qualification details if available */}
+      {qualification && (
+        <div className="rounded-md border border-border bg-background/40 px-3 py-2 space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Qualification</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+            {qualification.moveInDate && (
+              <div><span className="text-muted-foreground">Move-in:</span> <span className="font-medium">{qualification.moveInDate}</span></div>
+            )}
+            {qualification.roomType && (
+              <div><span className="text-muted-foreground">Room:</span> <span className="font-medium">{qualification.roomType}</span></div>
+            )}
+            {qualification.decisionMaker && (
+              <div><span className="text-muted-foreground">Decision:</span> <span className="font-medium capitalize">{qualification.decisionMaker}</span></div>
+            )}
+            {qualification.willBookToday && (
+              <div><span className="text-muted-foreground">Book today:</span> <span className="font-medium capitalize">{qualification.willBookToday}</span></div>
+            )}
+            {qualification.workLocation && (
+              <div><span className="text-muted-foreground">Work area:</span> <span className="font-medium">{qualification.workLocation}</span></div>
+            )}
+            {qualification.keyConcern && (
+              <div className="col-span-2"><span className="text-muted-foreground">Concern:</span> <span className="font-medium">{qualification.keyConcern}</span></div>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {qualification.readyIn48h && <Badge variant="secondary" className="text-[9px]">Ready in 48h</Badge>}
+            {qualification.exploring && <Badge variant="secondary" className="text-[9px]">Exploring</Badge>}
+            {qualification.comparing && <Badge variant="secondary" className="text-[9px]">Comparing</Badge>}
+            {qualification.needsFamily && <Badge variant="secondary" className="text-[9px]">Family approval</Badge>}
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      {tour.status === "scheduled" && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {showReschedule ? (
+            <div className="flex gap-2 w-full items-end">
+              <div className="flex-1">
+                <Label className="text-[10px] uppercase text-muted-foreground">New date & time</Label>
+                <Input
+                  type="datetime-local"
+                  value={newDateTime}
+                  onChange={(e) => setNewDateTime(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <Button
+                size="sm" variant="default" className="h-8 text-xs"
+                onClick={() => {
+                  if (newDateTime) {
+                    rescheduleTour(tour.id, new Date(newDateTime).toISOString());
+                    setShowReschedule(false);
+                    toast.success("Tour rescheduled");
+                  }
+                }}
+              >
+                Confirm
+              </Button>
+              <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setShowReschedule(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button
+                size="sm" variant="outline" className="h-7 text-[11px]"
+                onClick={() => setShowReschedule(true)}
+              >
+                <CalendarIcon className="h-3 w-3 mr-1" /> Reschedule
+              </Button>
+              <Button
+                size="sm" variant="outline" className="h-7 text-[11px] text-destructive hover:text-destructive"
+                onClick={() => {
+                  if (confirm("Cancel this tour?")) {
+                    cancelTour(tour.id);
+                    toast.success("Tour cancelled");
+                  }
+                }}
+              >
+                <X className="h-3 w-3 mr-1" /> Cancel Tour
+              </Button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
 
 function InlineScheduleTour({
   lead,
@@ -1151,7 +1370,8 @@ function InlineScheduleTour({
 }
 
 function toLocal(iso: string) {
-  const d = new Date(iso);
+  const d = parseSafeDate(iso);
+  if (!d) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

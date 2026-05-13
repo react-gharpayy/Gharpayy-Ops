@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAppState } from '@/myt/lib/app-context';
 import { teamMembers, zones } from '@/myt/lib/mock-data';
-import { cn } from '@/lib/utils';
+import { cn, formatTime12h } from '@/lib/utils';
 import { Tour } from '@/myt/lib/types';
 import { intentBg } from '@/myt/lib/confidence';
 import { Building2, Video, Briefcase } from 'lucide-react';
@@ -99,7 +99,7 @@ export default function TourCalendar() {
 
           {HOURS.map(h => (
             <div key={h} className="contents">
-              <div className="text-[10px] text-muted-foreground py-1.5 pr-2 text-right border-r border-border">{h}</div>
+              <div className="text-[10px] text-muted-foreground py-1.5 pr-2 text-right border-r border-border">{formatTime12h(h)}</div>
               {days.map(d => {
                 const items = slotMap[`${d.iso}_${h}`] ?? [];
                 return (
@@ -129,7 +129,7 @@ export default function TourCalendar() {
       {hoveredTour && (
         <div className={cn('hidden md:block fixed bottom-4 right-4 z-50 glass-card p-3 max-w-xs border', intentBg[hoveredTour.intent])}>
           <div className="text-sm font-semibold text-foreground">{hoveredTour.leadName}</div>
-          <div className="text-xs text-muted-foreground">{hoveredTour.propertyName} · {hoveredTour.tourTime}</div>
+          <div className="text-xs text-muted-foreground">{hoveredTour.propertyName} · {formatTime12h(hoveredTour.tourTime)}</div>
           <div className="text-xs mt-1">{hoveredTour.confidenceScore}% · {hoveredTour.confidenceReason.join(' · ')}</div>
         </div>
       )}
@@ -150,7 +150,7 @@ export default function TourCalendar() {
                 <div className="space-y-1.5">
                   {dayTours.map(t => (
                     <div key={t.id} className={cn('flex items-center gap-2 px-2 py-1.5 rounded border', intentColor(t.intent))}>
-                      <span className="text-[10px] font-mono text-foreground tabular-nums w-12">{t.tourTime}</span>
+                      <span className="text-[10px] font-mono text-foreground tabular-nums w-14">{formatTime12h(t.tourTime)}</span>
                       {tourIcon(t.tourType)}
                       <span className="text-xs font-medium text-foreground truncate flex-1">{t.leadName}</span>
                       <span className="text-[10px] text-muted-foreground tabular-nums">{t.confidenceScore}%</span>

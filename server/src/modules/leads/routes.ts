@@ -36,6 +36,12 @@ export function registerLeadsRoutes(app: FastifyInstance) {
       "cmd.lead.assign": ["lead.assign"],
       "cmd.lead.change_stage": ["lead.update"],
       "cmd.lead.delete": ["lead.update"],
+      "cmd.tour.schedule": ["tour.schedule"],
+      "cmd.tour.reschedule": ["tour.schedule"],
+      "cmd.tour.update": ["tour.schedule"],
+      "cmd.tour.cancel": ["tour.schedule"],
+      "cmd.tour.complete": ["tour.complete"],
+      "cmd.tour.update_post_tour": ["tour.complete"],
       "cmd.todo.create": ["todo.create"],
       "cmd.todo.update": ["todo.update"],
       "cmd.todo.assign": ["todo.assign"],
@@ -116,10 +122,18 @@ export function registerLeadsRoutes(app: FastifyInstance) {
     const myZones = req.user!.zones ?? [];
     const isMine = lead.createdBy === myId || lead.assignedTcmId === myId || lead.assigneeId === myId;
     const inMyZone = myZones.includes(lead.zoneId ?? "") || myZones.includes(lead.zoneCategory ?? "");
+    
+    // Allow if they have an active tour assigned for this lead
+    let hasTour = false;
+    if (!isMine && role === "member") {
+      const tour = await col("tours").findOne({ leadId: id, assignedTo: myId, tenantId: req.user!.tenantId });
+      if (tour) hasTour = true;
+    }
+
     const allowed =
       role === "super_admin" || role === "manager" ||
       (role === "admin" && (inMyZone || isMine)) ||
-      (role === "member" && isMine);
+      (role === "member" && (isMine || hasTour));
     if (!allowed) return reply.code(404).send({ code: "NOT_FOUND", message: "Lead not found" });
     return reply.send(lead);
   });

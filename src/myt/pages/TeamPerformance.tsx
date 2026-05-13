@@ -4,7 +4,7 @@ import { getMemberPerformance, zones } from '@/myt/lib/mock-data';
 import { DateRangeToggle } from '@/myt/components/DateRangeToggle';
 import { StatusBadge, OutcomeBadge } from '@/myt/components/StatusBadge';
 import { DateRange, MemberPerformance } from '@/myt/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, formatTime12h } from '@/lib/utils';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 
 export default function TeamPerformance() {
@@ -151,7 +151,7 @@ export default function TeamPerformance() {
               <div key={t.id} className="bg-surface-2/50 rounded-lg p-3 space-y-1">
                 <div className="flex justify-between text-xs">
                   <span className="text-foreground font-medium">{t.leadName}</span>
-                  <span className="text-muted-foreground">{t.tourDate} {t.tourTime}</span>
+                  <span className="text-muted-foreground">{t.tourDate} {formatTime12h(t.tourTime)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">{t.propertyName}</p>
                 <div className="flex gap-2">
@@ -179,7 +179,7 @@ export default function TeamPerformance() {
                 {memberTours.map(t => (
                   <tr key={t.id} className="border-b border-border/50">
                     <td className="py-2 text-muted-foreground">{t.tourDate}</td>
-                    <td className="py-2 text-muted-foreground">{t.tourTime}</td>
+                    <td className="py-2 text-muted-foreground">{formatTime12h(t.tourTime)}</td>
                     <td className="py-2 text-foreground">{t.leadName}</td>
                     <td className="py-2 text-muted-foreground">{t.propertyName}</td>
                     <td className="py-2"><StatusBadge status={t.status} /></td>

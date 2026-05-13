@@ -1,11 +1,12 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { CalendarDays, CheckCircle2, Clock3, Eye, FileText, MapPin, MessageSquare, PencilLine, UserRound } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, formatTime12h } from "@/lib/utils";
 import { useAppState } from "@/myt/lib/app-context";
 import type { Tour, TourOutcome, TourStatus } from "@/myt/lib/types";
 
@@ -24,7 +25,7 @@ const OUTCOME_OPTIONS: Array<{ value: TourOutcome; label: string }> = [
 
 export default function ScheduleTour() {
   const { tours, setTours, currentMemberId } = useAppState();
-  const { role, currentTcmId } = useApp();
+  const { role, currentTcmId, rescheduleTour, completeTour, cancelTour, updatePostTour } = useApp();
   const [tab, setTab] = useState<FilterTab>("all");
 
   // Use currentMemberId as primary identifier (set for all logged-in users)
@@ -39,20 +40,58 @@ export default function ScheduleTour() {
       if (tab === "scheduled") return tour.scheduledBy === actorId;
       return true;
     });
-    return [...scoped].sort((a, b) => {
+    const deduped = Array.from(new Map(scoped.map((tour) => [tour.id, tour])).values());
+    return deduped.sort((a, b) => {
       const aTs = new Date(`${a.tourDate}T${a.tourTime || "00:00"}`).getTime();
       const bTs = new Date(`${b.tourDate}T${b.tourTime || "00:00"}`).getTime();
       return bTs - aTs;
     });
   }, [actorId, tab, tours]);
 
-  const counts = useMemo(() => ({
-    all: actorId ? tours.filter((tour) => tour.scheduledBy === actorId || tour.assignedTo === actorId).length : 0,
-    assigned: actorId ? tours.filter((tour) => tour.assignedTo === actorId).length : 0,
-    scheduled: actorId ? tours.filter((tour) => tour.scheduledBy === actorId).length : 0,
-  }), [actorId, tours]);
+  const counts = useMemo(() => {
+    if (!actorId) return { all: 0, assigned: 0, scheduled: 0 };
+    const dedupedTours = Array.from(new Map(tours.map(t => [t.id, t])).values());
+    return {
+      all: dedupedTours.filter((tour) => tour.scheduledBy === actorId || tour.assignedTo === actorId).length,
+      assigned: dedupedTours.filter((tour) => tour.assignedTo === actorId).length,
+      scheduled: dedupedTours.filter((tour) => tour.scheduledBy === actorId).length,
+    };
+  }, [actorId, tours]);
+
+  const buildScheduledAt = (tourDate: string, tourTime: string) => {
+    const value = `${tourDate}T${tourTime || "00:00"}`;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  };
+
+  const handleReschedule = (tourId: string, tourDate: string, tourTime: string) => {
+    const scheduledAt = buildScheduledAt(tourDate, tourTime);
+    if (!scheduledAt) return;
+    updateTour(tourId, { tourDate, tourTime });
+    rescheduleTour(tourId, scheduledAt);
+  };
+
+  const handleStatusChange = (tourId: string, status: TourStatus) => {
+    updateTour(tourId, { status });
+    if (status === "completed") completeTour(tourId);
+    else if (status === "cancelled" || status === "no-show") cancelTour(tourId);
+    else useApp.getState().updateTourDetails(tourId, { status });
+  };
+
+  const handleUpdateDetails = (tourId: string, updates: Partial<Tour>) => {
+    updateTour(tourId, updates);
+    useApp.getState().updateTourDetails(tourId, updates);
+  };
+
+  const handleOutcomeChange = (tourId: string, outcome: TourOutcome) => {
+    updateTour(tourId, { outcome });
+    updatePostTour(tourId, { outcome });
+  };
 
   const updateTour = (tourId: string, updates: Partial<Tour>) => {
+    if (updates.remarks !== undefined) {
+      updatePostTour(tourId, { objectionNote: updates.remarks });
+    }
     setTours((prev) => prev.map((tour) => (tour.id === tourId ? { ...tour, ...updates } : tour)));
   };
 
@@ -113,7 +152,11 @@ export default function ScheduleTour() {
               key={tour.id}
               actorId={actorId}
               tour={tour}
+              onReschedule={handleReschedule}
+              onStatusChange={handleStatusChange}
+              onOutcomeChange={handleOutcomeChange}
               onUpdate={updateTour}
+              onUpdateDetails={handleUpdateDetails}
             />
           ))}
         </div>
@@ -125,11 +168,19 @@ export default function ScheduleTour() {
 function TourScheduleCard({
   actorId,
   tour,
+  onReschedule,
+  onStatusChange,
+  onOutcomeChange,
   onUpdate,
+  onUpdateDetails,
 }: {
   actorId: string;
   tour: Tour;
+  onReschedule: (tourId: string, tourDate: string, tourTime: string) => void;
+  onStatusChange: (tourId: string, status: TourStatus) => void;
+  onOutcomeChange: (tourId: string, outcome: TourOutcome) => void;
   onUpdate: (tourId: string, updates: Partial<Tour>) => void;
+  onUpdateDetails: (tourId: string, updates: Partial<Tour>) => void;
 }) {
   const canEdit = tour.assignedTo === actorId;
   const isSchedulerOnly = tour.scheduledBy === actorId && !canEdit;
@@ -146,7 +197,7 @@ function TourScheduleCard({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {tour.propertyName}</span>
             <span>{tour.area}</span>
-            <span className="inline-flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" /> {tour.tourDate} · {tour.tourTime}</span>
+            <span className="inline-flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" /> {tour.tourDate} · {formatTime12h(tour.tourTime)}</span>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1"><UserRound className="h-3.5 w-3.5" /> Assigned to {tour.assignedToName}</span>
@@ -202,7 +253,14 @@ function TourScheduleCard({
       ) : null}
 
       {canEdit ? (
-        <EditableTourPanel tour={tour} onUpdate={onUpdate} />
+        <EditableTourPanel
+          tour={tour}
+          onReschedule={onReschedule}
+          onStatusChange={onStatusChange}
+          onOutcomeChange={onOutcomeChange}
+          onUpdate={onUpdate}
+          onUpdateDetails={onUpdateDetails}
+        />
       ) : null}
     </section>
   );
@@ -210,11 +268,85 @@ function TourScheduleCard({
 
 function EditableTourPanel({
   tour,
+  onReschedule,
+  onStatusChange,
+  onOutcomeChange,
   onUpdate,
+  onUpdateDetails,
 }: {
   tour: Tour;
+  onReschedule: (tourId: string, tourDate: string, tourTime: string) => void;
+  onStatusChange: (tourId: string, status: TourStatus) => void;
+  onOutcomeChange: (tourId: string, outcome: TourOutcome) => void;
   onUpdate: (tourId: string, updates: Partial<Tour>) => void;
+  onUpdateDetails: (tourId: string, updates: Partial<Tour>) => void;
 }) {
+  const [localDate, setLocalDate] = useState(tour.tourDate);
+  const [localTime, setLocalTime] = useState(tour.tourTime);
+  const [localStatus, setLocalStatus] = useState<TourStatus>(tour.status);
+  const [localShowUp, setLocalShowUp] = useState(tour.showUp);
+  const [localOutcome, setLocalOutcome] = useState<TourOutcome>(tour.outcome);
+  const [localPropName, setLocalPropName] = useState(tour.propertyName);
+  const [localRemarks, setLocalRemarks] = useState(tour.remarks);
+
+  // Keep local state synced if tour updates from elsewhere
+  useEffect(() => {
+    setLocalDate(tour.tourDate);
+    setLocalTime(tour.tourTime);
+    setLocalStatus(tour.status);
+    setLocalShowUp(tour.showUp);
+    setLocalOutcome(tour.outcome);
+    setLocalPropName(tour.propertyName);
+    setLocalRemarks(tour.remarks);
+  }, [tour.tourDate, tour.tourTime, tour.status, tour.showUp, tour.outcome, tour.propertyName, tour.remarks]);
+
+  const handleSave = () => {
+    let updatedCount = 0;
+
+    if (localDate !== tour.tourDate || localTime !== tour.tourTime) {
+      onReschedule(tour.id, localDate, localTime);
+      updatedCount++;
+    }
+
+    if (localStatus !== tour.status) {
+      onStatusChange(tour.id, localStatus);
+      updatedCount++;
+    }
+
+    if (localOutcome !== tour.outcome) {
+      onOutcomeChange(tour.id, localOutcome);
+      updatedCount++;
+    }
+
+    const detailsUpdates: Partial<Tour> = {};
+    if (localPropName !== tour.propertyName) {
+      detailsUpdates.customPropertyName = localPropName;
+      detailsUpdates.propertyName = localPropName;
+    }
+    if (localShowUp !== tour.showUp) {
+      detailsUpdates.showUp = localShowUp;
+    }
+    
+    if (Object.keys(detailsUpdates).length > 0) {
+      onUpdateDetails(tour.id, detailsUpdates);
+      updatedCount++;
+    }
+
+    const genericUpdates: Partial<Tour> = {};
+    if (localRemarks !== tour.remarks) genericUpdates.remarks = localRemarks;
+
+    if (Object.keys(genericUpdates).length > 0) {
+      onUpdate(tour.id, genericUpdates);
+      updatedCount++;
+    }
+
+    if (updatedCount > 0) {
+      toast.success("Tour details updated");
+    } else {
+      toast("No changes to save");
+    }
+  };
+
   return (
     <div className="rounded-xl border border-accent/20 bg-accent/5 p-4 space-y-4">
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -228,8 +360,8 @@ function EditableTourPanel({
           <Input
             id={`tour-date-${tour.id}`}
             type="date"
-            value={tour.tourDate}
-            onChange={(e) => onUpdate(tour.id, { tourDate: e.target.value })}
+            value={localDate}
+            onChange={(e) => setLocalDate(e.target.value)}
           />
         </div>
         <div className="space-y-2">
@@ -237,16 +369,16 @@ function EditableTourPanel({
           <Input
             id={`tour-time-${tour.id}`}
             type="time"
-            value={tour.tourTime}
-            onChange={(e) => onUpdate(tour.id, { tourTime: e.target.value })}
+            value={localTime}
+            onChange={(e) => setLocalTime(e.target.value)}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor={`tour-status-${tour.id}`}>Status</Label>
           <select
             id={`tour-status-${tour.id}`}
-            value={tour.status}
-            onChange={(e) => onUpdate(tour.id, normalizeStatusUpdate(e.target.value as TourStatus, tour))}
+            value={localStatus}
+            onChange={(e) => setLocalStatus(e.target.value as TourStatus)}
             className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
           >
             {STATUS_OPTIONS.map((status) => (
@@ -260,8 +392,8 @@ function EditableTourPanel({
           <Label htmlFor={`tour-showup-${tour.id}`}>Show-up</Label>
           <select
             id={`tour-showup-${tour.id}`}
-            value={showUpValue(tour.showUp)}
-            onChange={(e) => onUpdate(tour.id, { showUp: parseShowUpValue(e.target.value) })}
+            value={localShowUp === true ? "yes" : localShowUp === false ? "no" : "pending"}
+            onChange={(e) => setLocalShowUp(e.target.value === "yes" ? true : e.target.value === "no" ? false : null)}
             className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="pending">Pending</option>
@@ -273,8 +405,8 @@ function EditableTourPanel({
           <Label htmlFor={`tour-outcome-${tour.id}`}>Outcome</Label>
           <select
             id={`tour-outcome-${tour.id}`}
-            value={tour.outcome ?? "none"}
-            onChange={(e) => onUpdate(tour.id, normalizeOutcomeUpdate(e.target.value, tour))}
+            value={localOutcome ?? "none"}
+            onChange={(e) => setLocalOutcome(e.target.value === "none" ? null : e.target.value as TourOutcome)}
             className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
           >
             {OUTCOME_OPTIONS.map((option) => (
@@ -288,8 +420,8 @@ function EditableTourPanel({
           <Label htmlFor={`tour-property-${tour.id}`}>Property</Label>
           <Input
             id={`tour-property-${tour.id}`}
-            value={tour.propertyName}
-            onChange={(e) => onUpdate(tour.id, { propertyName: e.target.value })}
+            value={localPropName}
+            onChange={(e) => setLocalPropName(e.target.value)}
           />
         </div>
       </div>
@@ -298,11 +430,20 @@ function EditableTourPanel({
         <Label htmlFor={`tour-remarks-${tour.id}`}>Progress notes</Label>
         <Textarea
           id={`tour-remarks-${tour.id}`}
-          value={tour.remarks}
-          onChange={(e) => onUpdate(tour.id, { remarks: e.target.value })}
+          value={localRemarks}
+          onChange={(e) => setLocalRemarks(e.target.value)}
           placeholder="Add tour progress, lead feedback, delays, follow-up notes..."
           className="min-h-[110px]"
         />
+      </div>
+
+      <div className="pt-2 flex justify-end">
+        <button
+          onClick={handleSave}
+          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+        >
+          Save changes
+        </button>
       </div>
     </div>
   );

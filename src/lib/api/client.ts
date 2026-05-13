@@ -22,6 +22,8 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+const inFlightGetRequests = new Map<string, Promise<unknown>>();
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!API_URL) throw new ApiError("NO_API_URL", "VITE_API_URL not configured", 0);
   const headers = new Headers(init.headers);
@@ -29,13 +31,51 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const t = tokenStore.get();
   if (t) headers.set("Authorization", `Bearer ${t}`);
 
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers, credentials: "include" });
-  const text = await res.text();
-  const body = text ? safeJson(text) : null;
-  if (!res.ok) {
-    throw new ApiError(body?.code ?? "INTERNAL", body?.message ?? res.statusText, res.status, body?.details);
+  const method = (init.method ?? "GET").toUpperCase();
+  const dedupeKey = method === "GET" && init.body == null ? `${API_URL}${path}::${t ?? "anon"}` : null;
+  if (dedupeKey) {
+    const existing = inFlightGetRequests.get(dedupeKey);
+    if (existing) return existing as Promise<T>;
   }
-  return body as T;
+
+  const runRequest = async (): Promise<T> => {
+    let lastError: Error = new Error("Request failed after retries");
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await fetch(`${API_URL}${path}`, { ...init, headers, credentials: "include" });
+        const text = await res.text();
+        const body = text ? safeJson(text) : null;
+        if (!res.ok) {
+          if (res.status === 429) {
+            const retryAfterValue = Number(body?.retryAfter ?? res.headers.get("Retry-After") ?? 2);
+            const retryAfter = Number.isFinite(retryAfterValue) && retryAfterValue > 0 ? retryAfterValue : 2;
+            if (attempt < 3) {
+              console.warn(`[API] Rate limited, retrying in ${retryAfter} seconds (attempt ${attempt}/3)`);
+              await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+              continue;
+            }
+          }
+          throw new ApiError(body?.code ?? "INTERNAL", body?.message ?? res.statusText, res.status, body?.details);
+        }
+        return body as T;
+      } catch (e) {
+        lastError = e as Error;
+        if (attempt === 3) break;
+        if ((e as ApiError)?.status !== 429) {
+          await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        }
+      }
+    }
+    throw lastError;
+  };
+
+  if (!dedupeKey) return runRequest();
+
+  const inFlight = runRequest().finally(() => {
+    inFlightGetRequests.delete(dedupeKey);
+  });
+  inFlightGetRequests.set(dedupeKey, inFlight);
+  return inFlight as Promise<T>;
 }
 function safeJson(t: string): any {
   try { return JSON.parse(t); } catch { return null; }
@@ -165,6 +205,14 @@ export const api = {
           return request<{ items: T[] }>(`/api/activities?${qs}`);
         },
         () => localAdapter.listActivities(q) as unknown as { items: T[] },
+      ),
+  },
+
+  tours: {
+    list: () =>
+      safe<{ items: import("@/contracts").Tour[]; nextCursor: string | null }>(
+        () => request<{ items: import("@/contracts").Tour[]; nextCursor: string | null }>(`/api/tours`),
+        () => localAdapter.listTours(),
       ),
   },
 
