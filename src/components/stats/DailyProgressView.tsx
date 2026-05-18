@@ -148,7 +148,12 @@ export function DailyProgressView() {
           <div className="rounded-2xl border border-primary/15 bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between gap-2 pb-3 border-b border-border/70">
               <div>
-                <p className="text-sm font-semibold">{memberRow.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold">{memberRow.name}</p>
+                  <Badge className={`text-[10px] uppercase border px-2 py-0.5 ${memberRow.role === "tcm" ? "bg-role-tcm/10 text-role-tcm border-role-tcm/20" : "bg-secondary/10 text-muted-foreground border-border/50"}`}>
+                    {memberRow.role === "tcm" ? "TCM" : "Member"}
+                  </Badge>
+                </div>
                 <p className="text-[10px] text-muted-foreground">Selected Date: {selectedDate}</p>
               </div>
               {memberRow.allDone && (
@@ -223,7 +228,12 @@ export function DailyProgressView() {
                         {String(member.name || "?").charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate">{member.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold truncate">{member.name}</p>
+                          <Badge className={`text-[10px] uppercase border px-2 py-0.5 ${member.role === "tcm" ? "bg-role-tcm/10 text-role-tcm border-role-tcm/20" : "bg-secondary/10 text-muted-foreground border-border/50"}`}>
+                            {member.role === "tcm" ? "TCM" : "Member"}
+                          </Badge>
+                        </div>
                         {member.zones.length > 0 && (
                           <p className="text-[10px] text-muted-foreground truncate">{member.zones.join(", ")}</p>
                         )}

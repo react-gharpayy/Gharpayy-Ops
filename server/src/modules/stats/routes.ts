@@ -18,7 +18,7 @@ async function getScopedMemberIdsForAdmin(tenantId: string, adminId: string) {
   if (adminZones.size === 0) return [] as string[];
 
   const allMembers = await col<UserDoc>("users")
-    .find({ tenantId, role: "member", status: { $in: ["active", "inactive"] } })
+    .find({ tenantId, role: { $in: ["member", "tcm"] }, status: { $in: ["active", "inactive"] } })
     .project({ _id: 1, zones: 1 })
     .toArray();
 
@@ -43,12 +43,12 @@ export function registerStatsRoutes(app: FastifyInstance) {
     const { selectedDate, dayStart, dayEnd } = buildIstDayRange(q.date ?? null);
     const tenantId = req.user!.tenantId;
 
-    let members: Pick<UserDoc, "_id" | "fullName" | "zones">[] = [];
+    let members: Pick<UserDoc, "_id" | "fullName" | "zones" | "role">[] = [];
 
     if (role === "member" || role === "tcm") {
       const me = await col<UserDoc>("users").findOne(
         { _id: req.user!.sub, tenantId },
-        { projection: { _id: 1, fullName: 1, zones: 1 } },
+        { projection: { _id: 1, fullName: 1, zones: 1, role: 1 } },
       );
       members = me ? [me] : [];
     } else if (role === "admin") {
@@ -65,16 +65,16 @@ export function registerStatsRoutes(app: FastifyInstance) {
         .find({
           _id: { $in: scopedMemberIds },
           tenantId,
-          role: "member",
+          role: { $in: ["member", "tcm"] },
           status: { $in: ["active", "inactive"] },
         })
-        .project({ _id: 1, fullName: 1, zones: 1 })
-        .toArray()) as Pick<UserDoc, "_id" | "fullName" | "zones">[];
+        .project({ _id: 1, fullName: 1, zones: 1, role: 1 })
+        .toArray()) as Pick<UserDoc, "_id" | "fullName" | "zones" | "role">[];
     } else {
       members = (await col<UserDoc>("users")
-        .find({ tenantId, role: "member", status: { $in: ["active", "inactive"] } })
-        .project({ _id: 1, fullName: 1, zones: 1 })
-        .toArray()) as Pick<UserDoc, "_id" | "fullName" | "zones">[];
+        .find({ tenantId, role: { $in: ["member", "tcm"] }, status: { $in: ["active", "inactive"] } })
+        .project({ _id: 1, fullName: 1, zones: 1, role: 1 })
+        .toArray()) as Pick<UserDoc, "_id" | "fullName" | "zones" | "role">[];
     }
 
     if (!members.length) {
@@ -128,6 +128,7 @@ export function registerStatsRoutes(app: FastifyInstance) {
         id,
         name: member.fullName,
         zones: member.zones ?? [],
+        role: member.role === "tcm" ? "tcm" : "member",
         leadsAdded,
         toursScheduled,
         leadsDone,

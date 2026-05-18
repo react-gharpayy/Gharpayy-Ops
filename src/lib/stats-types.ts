@@ -20,6 +20,7 @@ export type CreatorLeaderboardResponse = {
 export type LeadsDailyProgressMember = {
   id: string;
   name: string;
+  role: "member" | "tcm";
   zones: string[];
   leadsAdded: number;
   toursScheduled: number;
