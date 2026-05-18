@@ -35,6 +35,7 @@ import {
   Building2, Video, Briefcase,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { formatTime12h } from "@/lib/utils";
 import type { Lead, LeadStage, FollowUpPriority, SequenceKind } from "@/lib/types";
 import { toast } from "sonner";
 import { useMountedNow } from "@/hooks/use-now";
@@ -1359,12 +1360,50 @@ function InlineScheduleTour({
           </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-          <Input
-            type="datetime-local"
-            value={scheduledAt}
-            onChange={(e) => onScheduledAtChange(e.target.value)}
-            className="h-9 text-sm"
-          />
+          {/* Separate date and time selectors. Time options: 09:00–21:00 every 10 minutes */}
+          {(() => {
+            const datePart = scheduledAt ? scheduledAt.split("T")[0] : "";
+            const timePartRaw = scheduledAt && scheduledAt.includes("T") ? (scheduledAt.split("T")[1] || "").slice(0, 5) : "";
+            const times: string[] = [];
+            const pad = (n: number) => String(n).padStart(2, "0");
+            for (let mins = 9 * 60; mins <= 21 * 60; mins += 10) {
+              const h = Math.floor(mins / 60);
+              const m = mins % 60;
+              times.push(`${pad(h)}:${pad(m)}`);
+            }
+
+            return (
+              <div className="grid sm:grid-cols-2 gap-2">
+                <Input
+                  type="date"
+                  value={datePart}
+                  onChange={(e) => {
+                    const d = e.target.value;
+                    const t = timePartRaw || "09:00";
+                    onScheduledAtChange(d ? `${d}T${t}` : "");
+                  }}
+                  className="h-9 text-sm"
+                />
+
+                <Select value={timePartRaw} onValueChange={(v) => {
+                  const d = datePart || new Date().toISOString().split('T')[0];
+                  onScheduledAtChange(v ? `${d}T${v}` : "");
+                }}>
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Select time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {times.map((t) => (
+                      <SelectItem key={t} value={t} className="text-sm">
+                        {formatTime12h(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            );
+          })()}
+
           <Button size="sm" onClick={onSchedule} className="gap-1.5">
             <CalendarIcon className="h-3.5 w-3.5" /> Schedule Tour
           </Button>
