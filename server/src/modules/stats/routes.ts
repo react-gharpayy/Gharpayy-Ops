@@ -289,7 +289,7 @@ export function registerStatsRoutes(app: FastifyInstance) {
         { $unwind: "$user" },
         {
           $match: {
-            "user.role": "member",
+            "user.role": { $in: ["member", "tcm"] },
             "user.status": { $ne: "deleted" },
             "user.tenantId": tenantId,
           },
@@ -318,7 +318,7 @@ export function registerStatsRoutes(app: FastifyInstance) {
       rank: idx + 1,
       userId: row.userId,
       name: row.name || "Unknown User",
-      role: "member" as const,
+      role: (row.role === "tcm" ? "tcm" : "member") as const,
       toursCount: row.toursCount || 0,
       zones: (row.zones || []).sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count;

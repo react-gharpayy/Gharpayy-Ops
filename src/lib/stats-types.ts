@@ -4,7 +4,7 @@ export type CreatorLeaderboardEntry = {
   rank: number;
   userId: string;
   name: string;
-  role: "member";
+  role: "member" | "tcm";
   toursCount: number;
   zones: { zone: string; count: number }[];
 };

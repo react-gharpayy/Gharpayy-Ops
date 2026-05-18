@@ -34,6 +34,7 @@ function RankIcon({ rank }: { rank: number }) {
 }
 
 function PodiumCard({ item, index }: { item: CreatorLeaderboardEntry; index: number }) {
+  const roleLabel = item.role === "tcm" ? "TCM" : "Member";
   const heights = ["h-28", "h-24", "h-20"];
   return (
     <motion.div
@@ -47,7 +48,7 @@ function PodiumCard({ item, index }: { item: CreatorLeaderboardEntry; index: num
       </div>
       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Rank {item.rank}</p>
       <p className="mt-1 text-sm font-semibold text-foreground">{item.name}</p>
-      <p className="text-[11px] text-muted-foreground">Member</p>
+      <p className="text-[11px] text-muted-foreground">{roleLabel}</p>
       <div className={`mt-4 rounded-xl bg-background/70 px-3 py-2 ${heights[index] || "h-20"}`}>
         <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Tours</p>
         <p className="mt-1 text-2xl font-bold text-foreground">{item.toursCount}</p>
@@ -209,7 +210,7 @@ export function CreatorLeaderboardPanel({ compact = false }: { compact?: boolean
             ))}
           </div>
 
-          {currentUserEntry && authUser?.role === "member" && (
+          {currentUserEntry && (authUser?.role === "member" || authUser?.role === "tcm") && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -256,7 +257,7 @@ export function CreatorLeaderboardPanel({ compact = false }: { compact?: boolean
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="truncate text-sm font-semibold text-foreground">{entry.name}</p>
                         {isMe && <Badge className="text-[10px]">You</Badge>}
-                        <Badge variant="outline" className="text-[10px]">Member</Badge>
+                        <Badge variant="outline" className="text-[10px]">{entry.role === "tcm" ? "TCM" : "Member"}</Badge>
                       </div>
                       {entry.zones.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">

@@ -43,12 +43,13 @@ function ProgressStrip({
   );
 }
 
-/** Shown for every member login/refresh - today's goals popup. */
+/** Shown for every member/TCM login or refresh - today's goals popup. */
 export function MemberDailyReminderPopup() {
   const authUser = useAuthUser((s) => s.user);
   const [open, setOpen] = useState(false);
   const today = getTodayIstDate();
-  const reminderKey = authUser?.id && authUser.role === "member" ? `${today}:${authUser.id}` : null;
+  const isMemberLikeRole = authUser?.role === "member" || authUser?.role === "tcm";
+  const reminderKey = authUser?.id && isMemberLikeRole ? `${today}:${authUser.id}` : null;
 
   const previousReminderKeyRef = useRef<string | null>(null);
 
@@ -76,7 +77,7 @@ export function MemberDailyReminderPopup() {
     setOpen(true);
   }, [reminderKey]);
 
-  if (authUser?.role !== "member") return null;
+  if (!isMemberLikeRole) return null;
 
   const leadsAdded = memberRow?.leadsAdded ?? 0;
   const toursScheduled = memberRow?.toursScheduled ?? 0;

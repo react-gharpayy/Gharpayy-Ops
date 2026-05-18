@@ -74,7 +74,7 @@ function MetricTile({
 export function DailyProgressView() {
   const authUser = useAuthUser((s) => s.user);
   const role = authUser?.role ?? "";
-  const allowedRoles = ["super_admin", "manager", "admin", "member"];
+  const allowedRoles = ["super_admin", "manager", "admin", "member", "tcm"];
   const hasAccess = allowedRoles.includes(role);
 
   const [selectedDate, setSelectedDate] = useState(getTodayIstDate());
@@ -82,7 +82,7 @@ export function DailyProgressView() {
 
   const goals = data?.goals || { leadsAdded: 40, toursScheduled: 10 };
   const members = data?.members || [];
-  const isMemberView = role === "member";
+  const isMemberView = role === "member" || role === "tcm";
 
   const memberRow = useMemo(() => {
     if (!isMemberView) return null;
