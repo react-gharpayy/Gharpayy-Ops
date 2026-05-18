@@ -6,6 +6,7 @@ import { useTourData, type TourEventKind, type TCMReport, type CustomerFeedback 
 import { fmtWhen, genOtp, mapsLink, whatsappLink } from "@/myt/lib/messaging-utils";
 import { computeTourScore, detectMismatches } from "@/myt/lib/intelligence";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -114,7 +115,10 @@ export default function TourCommand() {
   function handleCustomerConfirmed() {
     logEvent("confirmed_by_customer", "Customer replied YES");
     setStatus("confirmed");
-    setTours((prev) => prev.map((t) => (t.id === safeTour.id ? { ...t, status: "confirmed" } : t)));
+    api.tours.update(safeTour.id, { status: "confirmed" }).catch(e => {
+      console.error("Failed to update tour status", e);
+      toast.error("Failed to save status change");
+    });
     toast.success("Marked as confirmed by customer");
   }
 
@@ -122,30 +126,42 @@ export default function TourCommand() {
     if (!otp) {
       const fresh = genOtp();
       setOtp(fresh);
-      logEvent("custom_message_sent", `OTP generated: ${fresh}`);
       toast.message(`OTP ${fresh} generated. Share with customer or use Tour Start OTP template.`);
       return;
     }
     logEvent("tour_started", `OTP: ${otp}`);
     setTours((prev) => prev.map((t) => (t.id === safeTour.id ? { ...t, status: "confirmed", showUp: true } : t)));
+    api.tours.update(safeTour.id, { status: "confirmed", showUp: true }).catch(e => {
+      console.error("Failed to update tour status", e);
+      toast.error("Failed to save status change");
+    });
     toast.success("Tour started");
   }
 
   function handleEndTour() {
     logEvent("tour_ended");
     setTours((prev) => prev.map((t) => (t.id === safeTour.id ? { ...t, status: "completed" } : t)));
+    api.tours.update(safeTour.id, { status: "completed" }).catch(e => {
+      console.error("Failed to update tour status", e);
+      toast.error("Failed to save status change");
+    });
     toast.success("Tour ended - please file TCM report");
   }
 
   function handleNoShow() {
     logEvent("no_show", "Marked no-show");
     setTours((prev) => prev.map((t) => (t.id === safeTour.id ? { ...t, status: "no-show", showUp: false } : t)));
+    api.tours.update(safeTour.id, { status: "no-show", showUp: false }).catch(e => {
+      console.error("Failed to update tour status", e);
+      toast.error("Failed to save status change");
+    });
     toast.warning("Marked as no-show");
   }
 
   function handleTcmOnWay() {
     logEvent("tcm_on_the_way", `ETA ${etaMinutes} min`);
   }
+
   function handleCustomerLate() {
     logEvent("customer_running_late");
   }

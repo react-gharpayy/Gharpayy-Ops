@@ -80,6 +80,13 @@ export function LiveToursBridge() {
         await new Promise(resolve => setTimeout(resolve, 100));
         
         const usersRes = await api.users.listLite();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Fetch members and TCMs to ensure complete user name mapping
+        const membersRes = await api.members.list().catch(() => []);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        const tcmsRes = await api.tcms.list().catch(() => []);
         
         const leadMap: Record<string, WireLead> = {};
         (leadsRes.items as WireLead[]).forEach((lead) => { leadMap[lead._id] = lead; });
@@ -87,6 +94,9 @@ export function LiveToursBridge() {
         properties.forEach((property) => { propertyMap[property.id] = property; });
         const userMap: Record<string, string> = {};
         usersRes.items.forEach((user) => { userMap[user._id] = user.name; });
+        // Include members and TCMs in the user map to ensure names are resolved correctly
+        membersRes.forEach((member) => { userMap[member.id] = member.fullName; });
+        tcmsRes.forEach((tcm) => { userMap[tcm.id] = tcm.fullName; });
         leadMapRef.current = leadMap;
         propertyMapRef.current = propertyMap;
         userMapRef.current = userMap;

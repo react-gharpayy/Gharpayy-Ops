@@ -24,11 +24,21 @@ export function useOrgMembers() {
     
     const fetchMembers = async () => {
       try {
-        const r = await api.users.listLite();
+        // Fetch all staff users: members, TCMs, and other staff roles
+        const [membersRes, tcmsRes] = await Promise.all([
+          api.members.list().catch(() => [] as ManagedUser[]),
+          api.tcms.list().catch(() => [] as ManagedUser[]),
+        ]);
+        
         if (cancelled) return;
-        setMembers(r.items.map((u: any) => ({ 
-          id: u._id, 
-          name: u.name, 
+        
+        // Combine and deduplicate by ID
+        const allUsers = [...membersRes, ...tcmsRes];
+        const uniqueUsers = Array.from(new Map(allUsers.map(u => [u.id, u])).values());
+        
+        setMembers(uniqueUsers.map((u: ManagedUser) => ({ 
+          id: u.id, 
+          name: u.fullName, 
           role: u.role, 
           zones: u.zones || [],
           adminId: u.adminId,

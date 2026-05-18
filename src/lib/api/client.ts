@@ -214,7 +214,9 @@ export const api = {
         () => request<{ items: import("@/contracts").Tour[]; nextCursor: string | null }>(`/api/tours`),
         () => localAdapter.listTours(),
       ),
-  },
+      update: (tourId: string, updates: Record<string, unknown>) =>
+        request<{ ok: boolean }>(`/api/tours/${tourId}`, { method: "PATCH", body: JSON.stringify(updates) }),
+    },
 
   // ---------- User management (super_admin) ----------
   users: {

@@ -103,7 +103,17 @@ export function registerLeadsRoutes(app: FastifyInstance) {
         { createdBy: myId },
       ];
     } else if (role === "tcm") {
-      filter.createdBy = myId;
+      // TCM can see leads they created OR leads they have tours assigned for
+      const myTours = await col("tours")
+        .find({ assignedTo: myId, tenantId: req.user!.tenantId })
+        .project({ leadId: 1 })
+        .toArray();
+      const tourLeadIds = myTours.map((t) => t.leadId);
+      
+      filter.$or = [
+        { createdBy: myId },
+        { _id: { $in: tourLeadIds } },
+      ];
     }
     // super_admin and manager fall through with no extra filter.
 
@@ -129,7 +139,7 @@ export function registerLeadsRoutes(app: FastifyInstance) {
     
     // Allow if they have an active tour assigned for this lead
     let hasTour = false;
-    if (!isMine && role === "member") {
+    if (!isMine && (role === "member" || role === "tcm")) {
       const tour = await col("tours").findOne({ leadId: id, assignedTo: myId, tenantId: req.user!.tenantId });
       if (tour) hasTour = true;
     }
@@ -138,7 +148,7 @@ export function registerLeadsRoutes(app: FastifyInstance) {
       role === "super_admin" || role === "manager" ||
       (role === "admin" && (inMyZone || isMine)) ||
       (role === "member" && (isMine || hasTour)) ||
-      (role === "tcm" && isTcmOwned);
+      (role === "tcm" && (isTcmOwned || hasTour));
     if (!allowed) return reply.code(404).send({ code: "NOT_FOUND", message: "Lead not found" });
     return reply.send(lead);
   });

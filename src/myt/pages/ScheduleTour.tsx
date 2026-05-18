@@ -25,7 +25,7 @@ const OUTCOME_OPTIONS: Array<{ value: TourOutcome; label: string }> = [
 
 export default function ScheduleTour() {
   const { tours, setTours, currentMemberId } = useAppState();
-  const { role, currentTcmId, rescheduleTour, completeTour, cancelTour, updatePostTour } = useApp();
+  const { role, currentTcmId, rescheduleTour, completeTour, cancelTour, updatePostTour, updateTourDetails } = useApp();
   const [tab, setTab] = useState<FilterTab>("all");
 
   // Use currentMemberId as primary identifier (set for all logged-in users)
@@ -74,8 +74,13 @@ export default function ScheduleTour() {
   const handleStatusChange = (tourId: string, status: TourStatus) => {
     updateTour(tourId, { status });
     if (status === "completed") completeTour(tourId);
-    else if (status === "cancelled" || status === "no-show") cancelTour(tourId);
-    else useApp.getState().updateTourDetails(tourId, { status });
+    else if (status === "cancelled") cancelTour(tourId);
+    else if (status === "no-show") {
+      updateTour(tourId, { status: "no-show", showUp: false });
+      void updateTourDetails(tourId, { status: "no-show", showUp: false });
+    } else {
+      void updateTourDetails(tourId, { status });
+    }
   };
 
   const handleUpdateDetails = (tourId: string, updates: Partial<Tour>) => {
