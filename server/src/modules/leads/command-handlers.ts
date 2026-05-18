@@ -173,7 +173,7 @@ async function applyCommand(cmd: Command, user: JwtClaims): Promise<LedgerDoc["r
             {
               _id: phoneKey,
               $or: [{ leadId: { $exists: false } }, { leadId: null }, { leadId: "" }],
-            },
+            } as any,
             { $set: { leadId, tenantId: user.tenantId, phoneE164, createdAt: now } },
           );
           if (reclaimed.matchedCount === 0) {

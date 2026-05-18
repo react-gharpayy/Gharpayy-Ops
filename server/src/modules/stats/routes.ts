@@ -318,7 +318,7 @@ export function registerStatsRoutes(app: FastifyInstance) {
       rank: idx + 1,
       userId: row.userId,
       name: row.name || "Unknown User",
-      role: (row.role === "tcm" ? "tcm" : "member") as const,
+      role: (row.role === "tcm" ? "tcm" : "member") as "tcm" | "member",
       toursCount: row.toursCount || 0,
       zones: (row.zones || []).sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count;
